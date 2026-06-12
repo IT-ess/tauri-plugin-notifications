@@ -15,6 +15,7 @@ import app.tauri.annotation.Permission
 import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.Logger
+import app.tauri.plugin.Channel
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
@@ -64,6 +65,11 @@ class SetClickListenerActiveArgs {
 }
 
 @InvokeArg
+class SilentPushHandlerArgs {
+  lateinit var handler: Channel
+}
+
+@InvokeArg
 class ActiveNotification {
   var id: Int = 0
   var tag: String? = null
@@ -101,6 +107,11 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   // `lateinit property manager has not been initialized`). Buffer the
   // intent and drain in load() instead.
   private var pendingIntent: Intent? = null
+
+  // Rust-only handler for silent (data-only) push messages. Set via the
+  // `registerSilentPushHandler` command, which the plugin's Rust layer calls;
+  // never exposed to the webview.
+  private var silentPushChannel: Channel? = null
 
   companion object {
     var instance: NotificationPlugin? = null
@@ -544,5 +555,44 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
     }
 
     invoke.resolve()
+  }
+
+  // Registers the Rust-side channel that receives silent (data-only) push
+  // messages. Intentionally NOT added to `build.rs` COMMANDS: it carries an IPC
+  // channel created in Rust and is only ever invoked from the plugin's Rust
+  // layer (`Notifications::on_silent_push`), never from the webview.
+  @Command
+  fun registerSilentPushHandler(invoke: Invoke) {
+    val args = invoke.parseArgs(SilentPushHandlerArgs::class.java)
+    silentPushChannel = args.handler
+    invoke.resolve()
+  }
+
+  // Called by TauriFirebaseMessagingService for a data-only (silent) push.
+  // Forwards the payload to the registered Rust handler and reports whether one
+  // consumed it. No-op (returns false) when no handler is registered — e.g. the
+  // app process was started solely by Firebase and the Tauri runtime is not up.
+  fun dispatchSilentPush(pushData: Map<String, Any>): Boolean {
+    if (!BuildConfig.ENABLE_PUSH_NOTIFICATIONS) return false
+
+    val channel = silentPushChannel ?: return false
+
+    val payload = JSObject()
+    val dataObj = JSObject()
+    (pushData["data"] as? Map<*, *>)?.forEach { (k, v) ->
+      if (k is String) dataObj.put(k, v?.toString() ?: "")
+    }
+    payload.put("data", dataObj)
+    (pushData["messageId"] as? String)?.let { payload.put("messageId", it) }
+    (pushData["from"] as? String)?.let { payload.put("from", it) }
+    (pushData["sentTime"] as? Long)?.let { payload.put("sentTime", it) }
+
+    return try {
+      channel.send(payload)
+      true
+    } catch (e: Exception) {
+      Logger.error(Logger.tags(TAG), "Failed to dispatch silent push: ${e.message}", e)
+      false
+    }
   }
 }

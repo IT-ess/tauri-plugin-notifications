@@ -438,6 +438,65 @@ app.notifications()
     .show()?;
 ```
 
+#### Silent (data-only) push notifications — Rust-only **(Android)**
+
+Some apps don't put the user-visible content in the push payload. Instead the
+server sends a *silent* push — a data-only message carrying just an identifier —
+and the app fetches the real content and raises the notification itself. This is
+how a Matrix client typically works: the push contains only a `room_id` /
+`event_id`, and the client calls its homeserver to load the event before
+notifying.
+
+`Notifications::on_silent_push` registers a Rust handler for these messages.
+It is intentionally **Rust-only** — there is no JavaScript equivalent, because
+the fetch-then-display logic belongs in the native layer. Register it once, for
+example in your Tauri `setup()`:
+
+```rust
+use tauri_plugin_notifications::NotificationsExt;
+
+#[cfg(target_os = "android")]
+{
+    let handle = app.handle().clone();
+    app.notifications().on_silent_push(move |push| {
+        // `push.data` is the FCM data payload (e.g. room_id / event_id).
+        let event_id = push.data.get("event_id").cloned().unwrap_or_default();
+
+        // ...fetch the event from your backend here...
+
+        // Then raise the notification yourself:
+        let _ = handle
+            .notifications()
+            .builder()
+            .title("New message")
+            .body(format!("Fetched content for {event_id}"))
+            .show();
+    })?;
+}
+```
+
+On the server side this is a data-only FCM message (no `notification` block):
+
+```json
+{
+  "message": {
+    "token": "<device-token>",
+    "data": { "room_id": "!abc:matrix.org", "event_id": "$xyz" }
+  }
+}
+```
+
+**Limitation:** the handler runs only while the app process is alive (foreground,
+or background but not yet killed). If the OS has killed the process, Android
+still starts the messaging service for a data message but the Tauri runtime —
+and therefore your handler — is not running, so the push is dropped. Delivering
+notifications in that state requires handling the message inside the Android
+service itself, which is out of scope for this handler.
+
+A runnable end-to-end demonstration (including a button that feeds a fake silent
+push through the same handler, so you can test without a Firebase backend) lives
+in [`examples/notifications-demo`](examples/notifications-demo).
+
 ## API Reference
 
 ### `isPermissionGranted()`

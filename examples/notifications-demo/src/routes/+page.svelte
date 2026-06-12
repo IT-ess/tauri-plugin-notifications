@@ -32,6 +32,7 @@
   } from "@choochmeque/tauri-plugin-notifications-api";
   import { onMount } from "svelte";
   import { resolveResource } from "@tauri-apps/api/path";
+  import { invoke } from "@tauri-apps/api/core";
 
   // ============================================================================
   // STATE MANAGEMENT
@@ -175,6 +176,23 @@
       addLog(`❌ Unregistered from push notifications`);
     } catch (error) {
       addLog(`Error unregistering from push: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+    }
+  }
+
+  /**
+   * Simulates a silent (data-only) push being delivered to the app, exercising
+   * the Rust-only `on_silent_push` handler. The Rust side "fetches" the event
+   * and shows the notification itself — the Matrix client pattern. Android-only.
+   */
+  async function handleSimulateSilentPush() {
+    try {
+      await invoke("simulate_silent_push", {
+        roomId: "!demo:matrix.org",
+        eventId: `$${Date.now()}`,
+      });
+      addLog("📨 Simulated silent push → handled natively in Rust");
+    } catch (error) {
+      addLog(`❌ Error simulating silent push: ${error}`);
     }
   }
 
@@ -733,6 +751,20 @@
         </button>
         <button onclick={handleUnregisterPush} class:danger={pushRegistered}>
           Unregister
+        </button>
+      </div>
+
+      <div class="info-box" style="margin-top: 1rem;">
+        <strong>Silent push (Android, Rust-only):</strong>
+        <p style="margin: 0.5rem 0;">
+          A data-only push carries just an id (e.g. a Matrix
+          <code>event_id</code>). The Rust handler registered via
+          <code>on_silent_push</code> fetches the content and raises the
+          notification itself — there is no JavaScript API for this. The button
+          below feeds a fake silent push through that exact handler.
+        </p>
+        <button onclick={handleSimulateSilentPush}>
+          Simulate Silent Push (Matrix)
         </button>
       </div>
 

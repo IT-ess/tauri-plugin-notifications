@@ -40,6 +40,14 @@ class TauriFirebaseMessagingService : FirebaseMessagingService() {
     // Trigger push-message event
     NotificationPlugin.instance?.triggerPushMessage(pushData)
 
+    // Silent (data-only) push: no `notification` block, so Android shows
+    // nothing. Hand it to a Rust-registered silent-push handler that can fetch
+    // the real content (e.g. a Matrix event by id) and raise the notification
+    // itself. No-op when no handler is registered or the runtime isn't up.
+    if (message.notification == null && message.data.isNotEmpty()) {
+      NotificationPlugin.instance?.dispatchSilentPush(pushData)
+    }
+
     // Also auto-show notification if notification payload exists
     val notification = message.notification
     if (notification != null) {

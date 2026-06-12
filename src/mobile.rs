@@ -213,4 +213,69 @@ impl<R: Runtime> Notifications<R> {
             .run_mobile_plugin("setClickListenerActive", args)
             .map_err(Into::into)
     }
+
+    /// Register a Rust-only handler for *silent* (data-only) push notifications
+    /// on Android.
+    ///
+    /// A silent push is an FCM message delivered without a `notification` block:
+    /// Android shows nothing and instead wakes the app with the raw data
+    /// payload. This is what a Matrix client receives when the homeserver only
+    /// sends an identifier (`room_id` / `event_id`) and expects the app to fetch
+    /// the message body and raise the notification itself — typically by calling
+    /// [`Notifications::builder`](Self::builder) from inside `handler`.
+    ///
+    /// `handler` runs whenever a silent push arrives **while the app process is
+    /// alive** (foreground, or background but not yet killed by the OS). It is
+    /// invoked on a background thread, so it must be `Send + Sync`. Only the most
+    /// recently registered handler is active.
+    ///
+    /// This API is intentionally Rust-only — it is not exposed to the webview and
+    /// has no JavaScript equivalent, because the fetch-then-display logic it
+    /// drives belongs in the native layer.
+    ///
+    /// # Limitations
+    ///
+    /// If the OS has killed the app process, Android still starts the messaging
+    /// service for a data message but the Tauri runtime — and therefore this
+    /// handler — is not running, so the push is dropped. Delivering notifications
+    /// in that state requires handling the message inside the Android service
+    /// itself, which is outside the scope of this handler.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use tauri::Runtime;
+    /// # fn example<R: Runtime>(notifications: &tauri_plugin_notifications::Notifications<R>, app: tauri::AppHandle<R>) -> tauri_plugin_notifications::Result<()> {
+    /// notifications.on_silent_push(move |push| {
+    ///     // e.g. push.data.get("event_id") -> fetch from the homeserver -> show
+    ///     log::info!("silent push: {:?}", push.data);
+    /// })?;
+    /// # Ok(()) }
+    /// ```
+    #[cfg(all(target_os = "android", feature = "push-notifications"))]
+    pub fn on_silent_push<F>(&self, handler: F) -> crate::Result<()>
+    where
+        F: Fn(crate::models::SilentPushNotification) + Send + Sync + 'static,
+    {
+        use tauri::ipc::{Channel, InvokeResponseBody};
+
+        // `TSend` is unused (we never call `channel.send` from Rust) but must be
+        // nameable; the default `InvokeResponseBody` serializes to the channel id
+        // the Kotlin side expects.
+        let channel: Channel = Channel::new(move |event| {
+            if let InvokeResponseBody::Json(payload) = event {
+                match serde_json::from_str::<crate::models::SilentPushNotification>(&payload) {
+                    Ok(push) => handler(push),
+                    Err(e) => log::error!("failed to deserialize silent push payload: {e}"),
+                }
+            }
+            Ok(())
+        });
+
+        let mut args = HashMap::new();
+        args.insert("handler", channel);
+        self.0
+            .run_mobile_plugin("registerSilentPushHandler", args)
+            .map_err(Into::into)
+    }
 }
