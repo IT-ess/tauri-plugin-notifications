@@ -18,6 +18,32 @@ pub struct PushNotificationResponse {
     pub device_token: String,
 }
 
+/// Payload handed to a Rust silent-push handler registered with
+/// [`Notifications::on_silent_push`](crate::Notifications::on_silent_push).
+///
+/// A *silent* push is a data-only FCM message — one delivered without a
+/// `notification` block, so Android shows nothing and instead wakes the app with
+/// just the data payload. This is the mechanism a Matrix client uses to receive
+/// only an identifier (e.g. `room_id` / `event_id`), fetch the actual message
+/// from its homeserver, and then raise the user-visible notification itself via
+/// [`Notifications::builder`](crate::Notifications::builder).
+///
+/// Android-only; there is intentionally no JavaScript equivalent.
+#[cfg(all(target_os = "android", feature = "push-notifications"))]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SilentPushNotification {
+    /// The FCM data payload. FCM delivers data values as strings.
+    #[serde(default)]
+    pub data: HashMap<String, String>,
+    /// The FCM message id, when present.
+    pub message_id: Option<String>,
+    /// The FCM `from` field (sender id or topic), when present.
+    pub from: Option<String>,
+    /// When the message was sent, in milliseconds since the Unix epoch.
+    pub sent_time: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attachment {
