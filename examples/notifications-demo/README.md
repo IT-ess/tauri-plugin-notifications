@@ -57,12 +57,12 @@ pnpm tauri android build --apk --debug --target x86_64
 adb install -r src-tauri/gen/android/app/build/outputs/apk/x86_64/debug/app-x86_64-debug.apk
 
 # Launch once and grant the notification permission, then kill the app:
-adb shell am force-stop com.test.app
+adb shell am force-stop com.alexis.notiftestapp
 
 # Cold-start the killed app straight into the background silent-push path:
-adb shell am broadcast -a com.test.app.DEBUG_SILENT_PUSH -f 0x01000020 \
+adb shell am broadcast -a com.alexis.notiftestapp.DEBUG_SILENT_PUSH -f 0x01000020 \
   --es room_id '!demo:matrix.org' --es event_id "evt$(date +%s)" \
-  -n com.test.app/.DebugSilentPushReceiver
+  -n com.alexis.notiftestapp/.DebugSilentPushReceiver
 ```
 
 `-f 0x01000020` = `FLAG_INCLUDE_STOPPED_PACKAGES` (`0x00000020`) +

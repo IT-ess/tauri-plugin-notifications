@@ -1,4 +1,4 @@
-package com.test.app
+package com.alexis.notiftestapp
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -20,16 +20,16 @@ import android.util.Log
  * ```
  */
 class DebugSilentPushReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val data = mutableMapOf<String, String>()
-        intent.getStringExtra("room_id")?.let { data["room_id"] = it }
-        intent.getStringExtra("event_id")?.let { data["event_id"] = it }
-        Log.i(TAG, "debug silent push received: $data (app may have been killed)")
+  override fun onReceive(context: Context, intent: Intent) {
+    val data = mutableMapOf<String, String>()
+    intent.getStringExtra("room_id")?.let { data["room_id"] = it }
+    intent.getStringExtra("event_id")?.let { data["event_id"] = it }
+    Log.i(TAG, "debug silent push received: $data (app may have been killed)")
 
-        DemoSilentPushHandler().onSilentPush(context.applicationContext, data, null)
-    }
+    DemoSilentPushHandler().onSilentPush(context.applicationContext, data, null)
+  }
 
-    private companion object {
-        const val TAG = "DebugSilentPushReceiver"
-    }
+  private companion object {
+    const val TAG = "DebugSilentPushReceiver"
+  }
 }
