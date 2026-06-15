@@ -2137,6 +2137,7 @@ name = "notifications-demo"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "jni",
  "log",
  "serde",
  "serde_json",
@@ -2144,6 +2145,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-notifications",
  "tauri-plugin-opener",
+ "tokio",
 ]
 
 [[package]]
