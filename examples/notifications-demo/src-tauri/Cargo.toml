@@ -31,3 +31,9 @@ log = "0.4"
 env_logger = { version = "0.11", default-features = false, features = [
     "humantime",
 ] }
+
+# Android-only: JNI entry called by the FCM service for killed-state silent
+# pushes, plus a runtime to mirror an async homeserver fetch.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+tokio = { version = "1", default-features = false, features = ["rt", "macros"] }

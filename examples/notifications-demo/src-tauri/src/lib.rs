@@ -1,10 +1,14 @@
-/// Simulates handling a *silent* (data-only) push for a Matrix-style client.
+// Android-only background (killed-state) silent-push handling: a JNI entry the
+// FCM service calls when there is no Tauri runtime. See the module docs.
+#[cfg(target_os = "android")]
+mod android_push;
+
+/// Simulates handling a *silent* (data-only) push for a Matrix-style client on
+/// the **warm** path — i.e. while the app/Tauri runtime is alive, driven by
+/// `on_silent_push`. Here we can use the plugin builder directly.
 ///
-/// A real client would receive an FCM data message carrying only identifiers
-/// (here `room_id` / `event_id`), call the homeserver to fetch the event, and
-/// then raise the notification. We have no homeserver in the demo, so we
-/// synthesize the "fetched" content and show the notification through the
-/// plugin — exercising the exact path `on_silent_push` drives in production.
+/// The **killed** path can't use the builder (no `AppHandle`); it goes through
+/// `android_push`'s JNI entry instead, but shares the same `simulate_matrix_fetch`.
 #[cfg(target_os = "android")]
 fn process_silent_push<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -21,18 +25,11 @@ fn process_silent_push<R: tauri::Runtime>(
         .cloned()
         .unwrap_or_else(|| "$unknown".to_string());
 
-    log::info!("silent push: fetching event {event_id} in room {room_id}");
+    log::info!("silent push (warm): fetching event {event_id} in room {room_id}");
 
     // Stand-in for `GET /_matrix/client/v3/rooms/{room_id}/event/{event_id}`.
-    let (sender, body) = simulate_matrix_fetch(&room_id, &event_id);
-
-    // Derive a stable notification id from the event id so re-delivery of the
-    // same event updates rather than stacks. Masked to 31 bits so it always
-    // fits a positive i32.
-    let hash = event_id.bytes().fold(0u32, |acc, b| {
-        acc.wrapping_mul(31).wrapping_add(u32::from(b))
-    }) & 0x7fff_ffff;
-    let id = i32::try_from(hash).unwrap_or(0);
+    let (sender, body) = android_push::simulate_matrix_fetch(&room_id, &event_id);
+    let id = android_push::notification_id_for(&event_id);
 
     let builder = app
         .notifications()
@@ -50,15 +47,6 @@ fn process_silent_push<R: tauri::Runtime>(
             log::error!("failed to show notification from silent push: {e}");
         }
     });
-}
-
-/// Pretend to fetch the event body from a homeserver. Returns `(sender, body)`.
-#[cfg(target_os = "android")]
-fn simulate_matrix_fetch(room_id: &str, event_id: &str) -> (String, String) {
-    (
-        "Alice".to_string(),
-        format!("New message in {room_id} (event {event_id})"),
-    )
 }
 
 /// Demo-only command: feed a fake silent push through the same handler the FCM

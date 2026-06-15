@@ -486,16 +486,73 @@ On the server side this is a data-only FCM message (no `notification` block):
 }
 ```
 
-**Limitation:** the handler runs only while the app process is alive (foreground,
-or background but not yet killed). If the OS has killed the process, Android
-still starts the messaging service for a data message but the Tauri runtime —
-and therefore your handler — is not running, so the push is dropped. Delivering
-notifications in that state requires handling the message inside the Android
-service itself, which is out of scope for this handler.
+**Limitation:** `on_silent_push` runs only while the app process is alive
+(foreground, or background but not yet killed). It's the *warm* path. When the OS
+has **killed** the app, Firebase still cold-starts the process and runs the
+messaging service, but the Tauri runtime — and therefore this handler — is not
+up, so a warm-only handler would miss the push. For that case, use the background
+handler below.
 
-A runnable end-to-end demonstration (including a button that feeds a fake silent
-push through the same handler, so you can test without a Firebase backend) lives
-in [`examples/notifications-demo`](examples/notifications-demo).
+#### Background (killed-state) delivery — Kotlin handler **(Android)**
+
+Firebase's messaging service runs in your app's **main process** (no separate
+process needed). On a data-only message it executes even after the app is killed
+— it just runs *without* the Activity/WebView, so there's no `AppHandle`. The
+plugin lets you hook that path with a Kotlin `SilentPushHandler` that runs in
+**every** state, killed included:
+
+```kotlin
+// com/example/MySilentPushHandler.kt
+class MySilentPushHandler : SilentPushHandler {
+    override fun onSilentPush(
+        context: Context,
+        data: Map<String, String>,
+        messageId: String?,
+    ): Boolean {
+        // No Tauri runtime here. Do the fetch (e.g. call your Rust matrix-sdk
+        // code over JNI — loading the app's .so does NOT start Tauri), then:
+        val notification = Notification().apply {
+            id = 1
+            title = "New message"
+            body = "..."
+        }
+        NotificationPlugin.postBackgroundNotification(context, notification)
+        return true // consumed; skips the warm on_silent_push dispatch
+    }
+}
+```
+
+Register it on the plugin's messaging service via `<meta-data>` in your app's
+`AndroidManifest.xml` (manifest-merged onto the service the plugin declares):
+
+```xml
+<service
+    android:name="app.tauri.notification.TauriFirebaseMessagingService"
+    tools:node="merge">
+    <meta-data
+        android:name="app.tauri.notification.SILENT_PUSH_HANDLER"
+        android:value="com.example.MySilentPushHandler" />
+</service>
+```
+
+Because the fetch (matrix-rust-sdk's `NotificationClient`, etc.) usually lives in
+Rust, the recommended pattern is: the Kotlin handler loads the app's existing
+`.so` and calls a **custom JNI entry** (separate from Tauri's) that runs the
+fetch on a short Tokio runtime and returns the notification content; Kotlin then
+posts it with `postBackgroundNotification`. The
+[`examples/notifications-demo`](examples/notifications-demo) app implements exactly
+this (`SilentPushBridge.kt` ↔ `src-tauri/src/android_push.rs`).
+
+**Caveats:** `onMessageReceived` gives you a short (~10–20s) window and Doze /
+background restrictions can delay or drop low-priority messages — send data
+messages with `"priority":"high"`, and if your fetch may exceed the window hand
+off to an expedited `WorkManager` job. A separate `android:process` is *optional*
+(memory isolation only) and would force a cross-process lock on a shared store.
+
+A runnable end-to-end demonstration — the warm path (a button that feeds a fake
+silent push through `on_silent_push`) **and** the killed-state path (an
+`adb`-driven cold-start test that needs no Firebase backend) — lives in
+[`examples/notifications-demo`](examples/notifications-demo); see its README.
 
 ## API Reference
 

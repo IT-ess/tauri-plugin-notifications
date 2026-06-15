@@ -20,6 +20,7 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.firebase.messaging.FirebaseMessaging
 
 const val LOCAL_NOTIFICATIONS = "permissionState"
@@ -145,6 +146,22 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
         data.put("attachments", arr)
       }
       instance?.trigger("notification", data)
+    }
+
+    /**
+     * Post a notification from a background context (e.g. a [SilentPushHandler]
+     * running after a cold start), without a live plugin instance or Activity.
+     *
+     * Builds a standalone [TauriNotificationManager] bound to `context`, ensures
+     * the default channel exists, and shows the notification immediately using
+     * the same builder/styling as foreground notifications. Safe to call when
+     * the app is killed — clicks open the app via its launcher intent.
+     */
+    fun postBackgroundNotification(context: Context, notification: Notification): Int {
+      val storage = NotificationStorage(context, ObjectMapper())
+      val manager = TauriNotificationManager(storage, null, context, null)
+      manager.createNotificationChannel()
+      return manager.schedule(notification)
     }
   }
 
