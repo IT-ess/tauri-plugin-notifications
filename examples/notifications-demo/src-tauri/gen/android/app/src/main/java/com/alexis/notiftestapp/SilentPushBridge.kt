@@ -1,4 +1,4 @@
-package com.test.app
+package com.alexis.notiftestapp
 
 /**
  * Bridge to the app's native library for background silent-push handling.
@@ -13,10 +13,10 @@ package com.test.app
  * Output: JSON `{ id, title, body, channelId }`, or `null` on failure.
  */
 object SilentPushBridge {
-    init {
-        System.loadLibrary("notifications_demo_lib")
-    }
+  init {
+    System.loadLibrary("notifications_demo_lib")
+  }
 
-    @JvmStatic
-    external fun nativeProcessSilentPush(dataJson: String): String?
+  @JvmStatic
+  external fun nativeProcessSilentPush(dataJson: String): String?
 }
