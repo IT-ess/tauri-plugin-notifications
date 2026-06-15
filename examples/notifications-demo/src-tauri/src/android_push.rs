@@ -35,10 +35,9 @@ pub(crate) fn simulate_matrix_fetch(room_id: &str, event_id: &str) -> (String, S
 /// Derive a stable, positive notification id from an event id, so re-delivery of
 /// the same event updates rather than stacks.
 pub(crate) fn notification_id_for(event_id: &str) -> i32 {
-    let hash = event_id
-        .bytes()
-        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(u32::from(b)))
-        & 0x7fff_ffff;
+    let hash = event_id.bytes().fold(0u32, |acc, b| {
+        acc.wrapping_mul(31).wrapping_add(u32::from(b))
+    }) & 0x7fff_ffff;
     i32::try_from(hash).unwrap_or(0)
 }
 
@@ -51,7 +50,9 @@ pub(crate) fn notification_id_for(event_id: &str) -> i32 {
 /// # Safety
 /// Called by the JVM with valid JNI references; not invoked from Rust.
 #[no_mangle]
-pub extern "system" fn Java_com_test_app_SilentPushBridge_nativeProcessSilentPush<'local>(
+pub extern "system" fn Java_com_alexis_notiftestapp_SilentPushBridge_nativeProcessSilentPush<
+    'local,
+>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     data_json: JString<'local>,
