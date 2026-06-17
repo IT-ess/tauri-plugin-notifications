@@ -33,11 +33,21 @@ interface SilentPushHandler {
    * Called on the Firebase background thread for a data-only push.
    *
    * @param context an application [Context]; the Activity is not available here.
+   * @param dataDir absolute path of the app's data directory
+   *   ([Context.getDataDir]). This is the same location Tauri's path API resolves
+   *   to on Android, so a background fetch can open the same on-disk store (e.g. a
+   *   Matrix SDK database) the main app uses — useful because the Tauri runtime,
+   *   and therefore its path API, is not available after a cold start.
    * @param data the FCM data payload.
    * @param messageId the FCM message id, if present.
    * @return `true` if this handler consumed the message. Returning `true`
    *   suppresses the warm-path Rust `on_silent_push` dispatch so the message is
    *   not handled twice.
    */
-  fun onSilentPush(context: Context, data: Map<String, String>, messageId: String?): Boolean
+  fun onSilentPush(
+    context: Context,
+    dataDir: String,
+    data: Map<String, String>,
+    messageId: String?
+  ): Boolean
 }

@@ -506,11 +506,14 @@ plugin lets you hook that path with a Kotlin `SilentPushHandler` that runs in
 class MySilentPushHandler : SilentPushHandler {
     override fun onSilentPush(
         context: Context,
+        dataDir: String,
         data: Map<String, String>,
         messageId: String?,
     ): Boolean {
-        // No Tauri runtime here. Do the fetch (e.g. call your Rust matrix-sdk
-        // code over JNI — loading the app's .so does NOT start Tauri), then:
+        // No Tauri runtime here, so no path API: `dataDir` is the app data dir
+        // (same path Tauri resolves to) — open your on-disk store under it.
+        // Do the fetch (e.g. call your Rust matrix-sdk code over JNI — loading
+        // the app's .so does NOT start Tauri), then:
         val notification = Notification().apply {
             id = 1
             title = "New message"
