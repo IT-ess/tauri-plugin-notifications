@@ -41,11 +41,15 @@ pub(crate) fn notification_id_for(event_id: &str) -> i32 {
     i32::try_from(hash).unwrap_or(0)
 }
 
-/// JNI entry: `com.test.app.SilentPushBridge.nativeProcessSilentPush(String): String`.
+/// JNI entry: `com.test.app.SilentPushBridge.nativeProcessSilentPush(String, String): String`.
 ///
-/// Input is the FCM data payload as a JSON object (string → string). Output is
-/// JSON `{ "id", "title", "body", "channelId" }` for Kotlin to post, or `null`
-/// on failure.
+/// Inputs are the app data directory path and the FCM data payload as a JSON
+/// object (string → string). Output is JSON `{ "id", "title", "body",
+/// "channelId" }` for Kotlin to post, or `null` on failure.
+///
+/// `data_dir` is the app's data directory (the same path Tauri's path API
+/// resolves to on Android); a real client opens its on-disk store (e.g. the
+/// Matrix SDK database) under it to decrypt the event.
 ///
 /// # Safety
 /// Called by the JVM with valid JNI references; not invoked from Rust.
@@ -55,9 +59,10 @@ pub extern "system" fn Java_com_alexis_notiftestapp_SilentPushBridge_nativeProce
 >(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
+    data_dir: JString<'local>,
     data_json: JString<'local>,
 ) -> jstring {
-    match process(&mut env, &data_json) {
+    match process(&mut env, &data_dir, &data_json) {
         Ok(json) => env
             .new_string(json)
             .map_or(std::ptr::null_mut(), jni::objects::JString::into_raw),
@@ -68,7 +73,11 @@ pub extern "system" fn Java_com_alexis_notiftestapp_SilentPushBridge_nativeProce
     }
 }
 
-fn process(env: &mut JNIEnv, data_json: &JString) -> Result<String, String> {
+fn process(env: &mut JNIEnv, data_dir: &JString, data_json: &JString) -> Result<String, String> {
+    let data_dir: String = env
+        .get_string(data_dir)
+        .map_err(|e| format!("reading dataDir JString: {e}"))?
+        .into();
     let input: String = env
         .get_string(data_json)
         .map_err(|e| format!("reading JString: {e}"))?
@@ -85,7 +94,11 @@ fn process(env: &mut JNIEnv, data_json: &JString) -> Result<String, String> {
         .cloned()
         .unwrap_or_else(|| "$unknown".to_string());
 
-    log::info!("silent push (background/JNI): fetching {event_id} in {room_id}");
+    // A real client opens its Matrix SDK store under `data_dir` here, e.g.
+    // `{data_dir}/matrix/<user>/db`, then decrypts the event via NotificationClient.
+    log::info!(
+        "silent push (background/JNI): fetching {event_id} in {room_id} (data dir: {data_dir})"
+    );
 
     // Mirror a real async homeserver fetch on a short-lived runtime. This is the
     // seam where matrix-rust-sdk's NotificationClient would run.
