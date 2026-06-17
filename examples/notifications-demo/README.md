@@ -38,7 +38,9 @@ can't fire. The demo handles this with:
   Tauri) and calls a custom JNI entry.
 - `src-tauri/src/android_push.rs` — that JNI entry; runs the (simulated) fetch on a
   short Tokio runtime and returns the notification content. This is the seam where
-  matrix-rust-sdk's `NotificationClient` would go.
+  matrix-rust-sdk's `NotificationClient` would go. The handler also receives the app
+  **data directory** path (the same location Tauri's path API resolves to) and passes
+  it through, so the fetch can open the same on-disk store the main app uses.
 - The handler then posts via `NotificationPlugin.postBackgroundNotification(...)`,
   reusing the plugin's channel/styling.
 

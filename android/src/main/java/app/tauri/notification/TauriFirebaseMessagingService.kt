@@ -104,7 +104,10 @@ class TauriFirebaseMessagingService : FirebaseMessagingService() {
         Logger.error(Logger.tags(TAG), "$className does not implement SilentPushHandler", null)
         return false
       }
-      handler.onSilentPush(applicationContext, message.data, message.messageId)
+      // Matches what Tauri's path API resolves to on Android (activity.dataDir),
+      // so the background fetch can open the same store the main app uses.
+      val dataDir = applicationContext.dataDir.absolutePath
+      handler.onSilentPush(applicationContext, dataDir, message.data, message.messageId)
     } catch (e: Exception) {
       Logger.error(Logger.tags(TAG), "Silent push handler '$className' failed: ${e.message}", e)
       false
