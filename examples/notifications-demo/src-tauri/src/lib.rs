@@ -14,7 +14,7 @@ fn process_silent_push<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     data: &std::collections::HashMap<String, String>,
 ) {
-    use tauri_plugin_notifications::NotificationsExt;
+    use tauri_plugin_notifications::{NotificationMessage, NotificationsExt};
 
     let room_id = data
         .get("room_id")
@@ -29,14 +29,24 @@ fn process_silent_push<R: tauri::Runtime>(
 
     // Stand-in for `GET /_matrix/client/v3/rooms/{room_id}/event/{event_id}`.
     let (sender, body) = android_push::simulate_matrix_fetch(&room_id, &event_id);
-    let id = android_push::notification_id_for(&event_id);
+    // Key the notification by the room so repeated events accumulate into one
+    // MessagingStyle conversation (tap the demo button twice to see it stack).
+    let id = android_push::notification_id_for(&room_id);
+    let sender_key = format!("@{}:matrix.org", sender.to_lowercase());
 
     let builder = app
         .notifications()
         .builder()
         .id(id)
-        .title(sender)
-        .body(body)
+        .conversation_title(room_id.as_str())
+        .group_conversation()
+        .self_name("Me")
+        .message(
+            NotificationMessage::new(body)
+                .sender(sender)
+                .person_key(sender_key)
+                .avatar_bytes(android_push::demo_avatar_base64()),
+        )
         .extra("room_id", room_id)
         .extra("event_id", event_id);
 

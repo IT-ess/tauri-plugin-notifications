@@ -49,6 +49,10 @@ can't fire. The demo handles this with:
   name, room title, and an expandable long message — and decodes the base64 avatar.
 - The handler then posts via `NotificationPlugin.postBackgroundNotification(...)`,
   reusing the plugin's channel/styling.
+- The notification **id is keyed by the room** (`notification_id_for(&room_id)`) and
+  `appendMessages` is on, so multiple events in the same room **stack** into one
+  conversation notification — the plugin appends each new message to the one already
+  showing, even across cold starts.
 
 Everything runs in the **main process** — no separate `android:process` is required.
 
@@ -71,6 +75,18 @@ adb shell am force-stop com.alexis.notiftestapp
 adb shell am broadcast -a com.alexis.notiftestapp.DEBUG_SILENT_PUSH -f 0x01000020 \
   --es room_id '!demo:matrix.org' --es event_id "evt$(date +%s)" \
   -n com.alexis.notiftestapp/.DebugSilentPushReceiver
+```
+
+Send it **twice for the same `room_id`** (different `event_id`s) and the two messages
+stack into one conversation notification rather than posting separately:
+
+```bash
+for n in 1 2; do
+  adb shell am broadcast -a com.alexis.notiftestapp.DEBUG_SILENT_PUSH -f 0x01000020 \
+    --es room_id '!demo:matrix.org' --es event_id "evt$n-$(date +%s)" \
+    -n com.alexis.notiftestapp/.DebugSilentPushReceiver
+  sleep 1
+done
 ```
 
 `-f 0x01000020` = `FLAG_INCLUDE_STOPPED_PACKAGES` (`0x00000020`) +

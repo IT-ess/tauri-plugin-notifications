@@ -232,6 +232,15 @@ pub struct NotificationData {
     #[serde(default)]
     pub(crate) group_conversation: bool,
     pub(crate) self_name: Option<String>,
+    /// When true (default), posting a `MessagingStyle` notification whose `id` is
+    /// already showing appends the new messages to that conversation instead of
+    /// replacing it. Android only.
+    #[serde(default = "default_true")]
+    pub(crate) append_messages: bool,
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 /// A single chat message for an Android `MessagingStyle` notification.
@@ -323,6 +332,7 @@ impl Default for NotificationData {
             conversation_title: None,
             group_conversation: false,
             self_name: None,
+            append_messages: true,
         }
     }
 }

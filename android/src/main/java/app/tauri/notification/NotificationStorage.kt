@@ -3,6 +3,7 @@ package app.tauri.notification
 import android.content.Context
 import android.content.SharedPreferences
 import app.tauri.Logger
+import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
 private const val STORAGE_TAG = "NotificationStorage"
@@ -10,6 +11,9 @@ private const val STORAGE_TAG = "NotificationStorage"
 private const val NOTIFICATION_STORE_ID = "NOTIFICATION_STORE"
 // Key used to save action types
 private const val ACTION_TYPES_ID = "ACTION_TYPE_STORE"
+// Key for accumulating MessagingStyle conversations (per notification id) and
+// per-sender avatars, so chat notifications survive process death reliably.
+private const val MESSAGING_STORE_ID = "MESSAGING_STORE"
 
 class NotificationStorage(private val context: Context, private val jsonMapper: ObjectMapper) {
   fun appendNotifications(localNotifications: List<Notification>) {
@@ -84,6 +88,43 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
 
   private fun getStorage(key: String): SharedPreferences {
     return context.getSharedPreferences(key, Context.MODE_PRIVATE)
+  }
+
+  /** Load the accumulated chat messages for a conversation (notification id). */
+  fun loadConversation(id: Int): MutableList<NotificationMessage> {
+    val json = getStorage(MESSAGING_STORE_ID).getString("conv_$id", null) ?: return mutableListOf()
+    return try {
+      jsonMapper.readValue(json, object : TypeReference<MutableList<NotificationMessage>>() {})
+    } catch (e: Exception) {
+      Logger.error(Logger.tags(STORAGE_TAG), "Failed to parse conversation $id: ${e.message}", e)
+      mutableListOf()
+    }
+  }
+
+  /** Persist the (capped) chat messages for a conversation. */
+  fun saveConversation(id: Int, messages: List<NotificationMessage>) {
+    val json = try {
+      jsonMapper.writeValueAsString(messages)
+    } catch (e: Exception) {
+      Logger.error(Logger.tags(STORAGE_TAG), "Failed to serialize conversation $id: ${e.message}", e)
+      return
+    }
+    getStorage(MESSAGING_STORE_ID).edit().putString("conv_$id", json).apply()
+  }
+
+  /** Drop a conversation's history (e.g. when its notification is cancelled). */
+  fun clearConversation(id: Int) {
+    getStorage(MESSAGING_STORE_ID).edit().remove("conv_$id").apply()
+  }
+
+  /** Store a sender's avatar once (by person key), referenced by their messages. */
+  fun saveAvatar(personKey: String, base64: String) {
+    getStorage(MESSAGING_STORE_ID).edit().putString("avatar_$personKey", base64).apply()
+  }
+
+  fun loadAvatar(personKey: String?): String? {
+    if (personKey == null) return null
+    return getStorage(MESSAGING_STORE_ID).getString("avatar_$personKey", null)
   }
 
   fun writeActionGroup(actions: List<ActionType>) {

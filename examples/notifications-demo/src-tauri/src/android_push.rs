@@ -40,15 +40,17 @@ pub(crate) fn simulate_matrix_fetch(room_id: &str, event_id: &str) -> (String, S
 /// Base64-encoded demo avatar. Stands in for the bytes a real client gets from
 /// matrix-sdk's media store after downloading the sender/room `mxc://` avatar;
 /// here we just reuse the app icon so no extra asset is committed.
-fn demo_avatar_base64() -> String {
+pub(crate) fn demo_avatar_base64() -> String {
     const AVATAR_PNG: &[u8] = include_bytes!("../icons/testavatar.png");
     base64::engine::general_purpose::STANDARD.encode(AVATAR_PNG)
 }
 
-/// Derive a stable, positive notification id from an event id, so re-delivery of
-/// the same event updates rather than stacks.
-pub(crate) fn notification_id_for(event_id: &str) -> i32 {
-    let hash = event_id.bytes().fold(0u32, |acc, b| {
+/// Derive a stable, positive notification id from a conversation key (the room
+/// id). Using the room as the key means every message in that room lands in the
+/// same notification, so the plugin accumulates them into one conversation
+/// instead of posting a separate notification per event.
+pub(crate) fn notification_id_for(key: &str) -> i32 {
+    let hash = key.bytes().fold(0u32, |acc, b| {
         acc.wrapping_mul(31).wrapping_add(u32::from(b))
     }) & 0x7fff_ffff;
     i32::try_from(hash).unwrap_or(0)
@@ -135,14 +137,17 @@ fn process(env: &mut JNIEnv, data_dir: &JString, data_json: &JString) -> Result<
 
     // MessagingStyle: the plugin decodes `avatarBytes` and renders a chat-style
     // notification with the sender's circular avatar and the room as the title.
+    // The id is keyed by the room, and `appendMessages` lets the plugin stack
+    // each new event onto the same conversation notification.
     let out = serde_json::json!({
-        "id": notification_id_for(&event_id),
+        "id": notification_id_for(&room_id),
         "channelId": "default",
         "title": sender,
         "body": body,
         "conversationTitle": room_id,
         "groupConversation": true,
         "selfName": "Me",
+        "appendMessages": true,
         "messages": [{
             "sender": sender,
             "personKey": sender_key,
