@@ -550,6 +550,17 @@ The same fields exist on the Rust builder (`.message(...)`, `.conversation_title
 `.group_conversation()`, `.self_name(...)`) and the JS `Options` (`messages`,
 `conversationTitle`, …) for the warm/foreground paths. Android only.
 
+**Grouping a conversation's messages.** Android merges notifications by **id**, so to
+collect a chat into one notification, post every message for a room with the **same id**
+(e.g. a stable hash of the room id). By default (`appendMessages = true`) the plugin
+**accumulates** the conversation: it persists the messages for that id and appends each
+new one, so you only send the single new event each time and the prior messages are
+restored — reliably, even across a cold start (the history is stored on disk rather than
+read back from the shown notification, which is unreliable on some OS versions). Sender
+avatars are stored once per `personKey` to keep it small, and history is capped to the
+most recent messages. Set `appendMessages = false` to replace the conversation instead
+(e.g. once the room is read); cancelling the notification also clears its history.
+
 Register it on the plugin's messaging service via `<meta-data>` in your app's
 `AndroidManifest.xml` (manifest-merged onto the service the plugin declares):
 

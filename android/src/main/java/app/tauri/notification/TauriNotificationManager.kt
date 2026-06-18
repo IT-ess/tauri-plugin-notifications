@@ -41,6 +41,9 @@ const val DEFAULT_NOTIFICATION_CHANNEL_ID = "default"
 const val DEFAULT_PRESS_ACTION = "tap"
 const val TAG = "NotificationsPlugin"
 
+// Upper bound on messages retained in an accumulating MessagingStyle notification.
+private const val MAX_MESSAGES = 25
+
 class TauriNotificationManager(
   private val storage: NotificationStorage,
   private val activity: Activity?,
@@ -234,19 +237,54 @@ class TauriNotificationManager(
   // Build a chat-style notification: each message shows its sender and (circular)
   // avatar, with an optional conversation title for group rooms. The most recent
   // sender's avatar is also used as the collapsed-view large icon.
+  //
+  // When `appendMessages` is set, the new messages are appended to the
+  // conversation persisted for this notification id (capped at MAX_MESSAGES), so
+  // a room's messages accumulate into one notification across cold starts. We
+  // persist rather than read back the shown notification because the platform's
+  // active-notification query is unreliable for this on some OS versions.
   private fun applyMessagingStyle(
     mBuilder: NotificationCompat.Builder,
     notification: Notification,
     messages: List<NotificationMessage>
   ) {
+    val history = if (notification.appendMessages) {
+      storage.loadConversation(notification.id)
+    } else {
+      mutableListOf()
+    }
+    for (message in messages) {
+      // Persist a sender's avatar once (by key); messages reference it, keeping
+      // the stored conversation small even when avatars are large.
+      val key = message.personKey
+      val bytes = message.avatarBytes
+      if (key != null && !bytes.isNullOrEmpty()) {
+        storage.saveAvatar(key, bytes)
+      }
+      history.add(NotificationMessage().apply {
+        sender = message.sender
+        personKey = message.personKey
+        text = message.text
+        timestamp = if (message.timestamp != 0L) message.timestamp else System.currentTimeMillis()
+        // Keep avatar inline only when there's no key to dedupe on.
+        avatarBytes = if (key == null) bytes else null
+      })
+    }
+    val capped = if (history.size > MAX_MESSAGES) {
+      history.takeLast(MAX_MESSAGES).toMutableList()
+    } else {
+      history
+    }
+    storage.saveConversation(notification.id, capped)
+
     val self = Person.Builder().setName(notification.selfName ?: "Me").build()
     val style = NotificationCompat.MessagingStyle(self)
       .setConversationTitle(notification.conversationTitle)
       .setGroupConversation(notification.groupConversation)
 
     var lastAvatar: Bitmap? = null
-    for (message in messages) {
-      val avatar = Notification.decodeBase64Bitmap(message.avatarBytes)
+    for (message in capped) {
+      val avatar = Notification.decodeBase64Bitmap(message.avatarBytes ?: storage.loadAvatar(message.personKey))
       if (avatar != null) lastAvatar = avatar
       val person = Person.Builder()
         .setName(message.sender)
@@ -432,6 +470,8 @@ class TauriNotificationManager(
       dismissVisibleNotification(id)
       cancelTimerForNotification(id)
       storage.deleteNotification(id.toString())
+      // Reset accumulated chat history so a later message starts a fresh thread.
+      storage.clearConversation(id)
     }
   }
 

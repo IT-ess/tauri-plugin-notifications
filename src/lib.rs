@@ -205,6 +205,15 @@ impl<R: Runtime> NotificationsBuilder<R> {
         self
     }
 
+    /// Whether a `MessagingStyle` notification appends to an already-showing
+    /// notification with the same `id` (default `true`), accumulating a
+    /// conversation. Set `false` to replace it instead. Android only.
+    #[must_use]
+    pub const fn append_messages(mut self, append: bool) -> Self {
+        self.data.append_messages = append;
+        self
+    }
+
     /// Defines an action type for this notification.
     #[must_use]
     pub fn action_type_id(mut self, action_type_id: impl Into<String>) -> Self {

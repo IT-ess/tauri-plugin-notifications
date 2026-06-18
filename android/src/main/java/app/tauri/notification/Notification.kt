@@ -64,6 +64,10 @@ class Notification {
   var conversationTitle: String? = null
   var groupConversation: Boolean = false
   var selfName: String? = null
+  // When true (default), posting a MessagingStyle notification whose `id` is
+  // already showing appends the new messages to that conversation instead of
+  // replacing it. Set false to replace (e.g. once the room has been read).
+  var appendMessages: Boolean = true
 
   fun getSound(context: Context, defaultSound: Int): String? {
     var soundPath: String? = null

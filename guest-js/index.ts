@@ -151,6 +151,12 @@ interface Options {
    * "Me"). Android only.
    */
   selfName?: string;
+  /**
+   * When `true` (default), posting a `messages` notification whose `id` is already
+   * showing appends the new messages to that conversation instead of replacing it,
+   * accumulating a chat thread. Set `false` to replace. Android only.
+   */
+  appendMessages?: boolean;
 }
 
 /**

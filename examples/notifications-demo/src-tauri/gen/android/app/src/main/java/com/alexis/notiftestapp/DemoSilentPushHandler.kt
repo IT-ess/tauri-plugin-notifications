@@ -46,6 +46,7 @@ class DemoSilentPushHandler : SilentPushHandler {
         conversationTitle = result.optString("conversationTitle", null)
         groupConversation = result.optBoolean("groupConversation", false)
         selfName = result.optString("selfName", null)
+        appendMessages = result.optBoolean("appendMessages", true)
         messages = parseMessages(result.optJSONArray("messages"))
       }
       NotificationPlugin.postBackgroundNotification(context, notification)
