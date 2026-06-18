@@ -224,6 +224,72 @@ pub struct NotificationData {
     pub(crate) auto_cancel: bool,
     #[serde(default)]
     pub(crate) silent: bool,
+    /// Chat messages rendered with Android `MessagingStyle` (per-sender avatars).
+    /// When non-empty this takes precedence over `largeBody` / `inboxLines`.
+    #[serde(default)]
+    pub(crate) messages: Vec<NotificationMessage>,
+    pub(crate) conversation_title: Option<String>,
+    #[serde(default)]
+    pub(crate) group_conversation: bool,
+    pub(crate) self_name: Option<String>,
+}
+
+/// A single chat message for an Android `MessagingStyle` notification.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationMessage {
+    /// Display name of the sender (`None` renders as the local user).
+    pub(crate) sender: Option<String>,
+    /// Stable key identifying the sender (e.g. a Matrix user id), used by the
+    /// system to de-duplicate/merge senders across messages.
+    pub(crate) person_key: Option<String>,
+    /// Sender avatar as base64-encoded image bytes; shown as a circular icon.
+    pub(crate) avatar_bytes: Option<String>,
+    /// Message text.
+    pub(crate) text: Option<String>,
+    /// Message time in epoch milliseconds (`0` → now).
+    #[serde(default)]
+    pub(crate) timestamp: i64,
+}
+
+impl NotificationMessage {
+    /// Create a message with the given text. Defaults: no sender (rendered as the
+    /// local user), no avatar, timestamp `0` (rendered as "now").
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: Some(text.into()),
+            ..Self::default()
+        }
+    }
+
+    /// Set the sender's display name.
+    #[must_use]
+    pub fn sender(mut self, sender: impl Into<String>) -> Self {
+        self.sender = Some(sender.into());
+        self
+    }
+
+    /// Set a stable key identifying the sender (e.g. a Matrix user id).
+    #[must_use]
+    pub fn person_key(mut self, key: impl Into<String>) -> Self {
+        self.person_key = Some(key.into());
+        self
+    }
+
+    /// Set the sender avatar as base64-encoded image bytes (PNG/JPEG).
+    #[must_use]
+    pub fn avatar_bytes(mut self, base64: impl Into<String>) -> Self {
+        self.avatar_bytes = Some(base64.into());
+        self
+    }
+
+    /// Set the message time in epoch milliseconds.
+    #[must_use]
+    pub const fn timestamp(mut self, millis: i64) -> Self {
+        self.timestamp = millis;
+        self
+    }
 }
 
 fn default_id() -> i32 {
@@ -253,6 +319,10 @@ impl Default for NotificationData {
             ongoing: false,
             auto_cancel: false,
             silent: false,
+            messages: Vec::new(),
+            conversation_title: None,
+            group_conversation: false,
+            self_name: None,
         }
     }
 }
