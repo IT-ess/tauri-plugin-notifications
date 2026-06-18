@@ -41,6 +41,12 @@ can't fire. The demo handles this with:
   matrix-rust-sdk's `NotificationClient` would go. The handler also receives the app
   **data directory** path (the same location Tauri's path API resolves to) and passes
   it through, so the fetch can open the same on-disk store the main app uses.
+  It returns a chat-style payload (`conversationTitle`, `selfName`, and a `messages`
+  array) including the sender **avatar as base64 bytes** — standing in for the bytes
+  matrix-rust-sdk would return after downloading the `mxc://` avatar.
+- The handler copies those fields onto the `Notification` and posts it; the plugin
+  renders an Android **`MessagingStyle`** notification — circular avatar, sender
+  name, room title, and an expandable long message — and decodes the base64 avatar.
 - The handler then posts via `NotificationPlugin.postBackgroundNotification(...)`,
   reusing the plugin's channel/styling.
 

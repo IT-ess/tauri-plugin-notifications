@@ -130,6 +130,49 @@ interface Options {
    * Sets the number of items this notification represents on Android.
    */
   number?: number;
+  /**
+   * Chat messages, rendered as an Android `MessagingStyle` conversation with
+   * per-sender (circular) avatars. When set, this takes precedence over
+   * `largeBody` and `inboxLines`. Android only.
+   */
+  messages?: Message[];
+  /**
+   * Conversation title shown above the messages (typically the room name for a
+   * group conversation). Used with `messages`. Android only.
+   */
+  conversationTitle?: string;
+  /**
+   * Marks the conversation as a group (multiple participants), letting the system
+   * display `conversationTitle`. Android only.
+   */
+  groupConversation?: boolean;
+  /**
+   * Display name of the local user in a `messages` conversation (defaults to
+   * "Me"). Android only.
+   */
+  selfName?: string;
+}
+
+/**
+ * A single chat message inside a `MessagingStyle` notification (Android).
+ */
+interface Message {
+  /** Display name of the sender. Omit to render as the local user. */
+  sender?: string;
+  /**
+   * Stable key identifying the sender (e.g. a Matrix user id), used by the system
+   * to merge messages from the same sender.
+   */
+  personKey?: string;
+  /**
+   * Sender avatar as base64-encoded image bytes (PNG/JPEG), shown as a circular
+   * icon. Useful for dynamic avatars that aren't bundled drawables.
+   */
+  avatarBytes?: string;
+  /** Message text. */
+  text?: string;
+  /** Message time in epoch milliseconds. Omit or use `0` for "now". */
+  timestamp?: number;
 }
 
 /**
@@ -885,6 +928,7 @@ async function onNotificationClicked(
 export type {
   Attachment,
   Options,
+  Message,
   Action,
   ActionType,
   PendingNotification,
