@@ -525,6 +525,31 @@ class MySilentPushHandler : SilentPushHandler {
 }
 ```
 
+For chat apps, render a richer **`MessagingStyle`** notification — a sender name,
+a circular avatar, and an expandable message — by setting `messages` instead of a
+plain `body`. The avatar is supplied as **base64 image bytes** (`avatarBytes`), so
+it can be a dynamic image (e.g. a Matrix avatar your background fetch downloaded)
+rather than a bundled drawable; the plugin decodes it:
+
+```kotlin
+val notification = Notification().apply {
+    id = 1
+    conversationTitle = "#general"      // room name (group conversations)
+    groupConversation = true
+    messages = listOf(NotificationMessage().apply {
+        sender = "Alice"
+        personKey = "@alice:matrix.org" // stable id; merges a sender's messages
+        text = "Hey, are you around later to review the PR?"
+        avatarBytes = avatarBase64      // base64 PNG/JPEG; shown circular
+    })
+}
+NotificationPlugin.postBackgroundNotification(context, notification)
+```
+
+The same fields exist on the Rust builder (`.message(...)`, `.conversation_title(...)`,
+`.group_conversation()`, `.self_name(...)`) and the JS `Options` (`messages`,
+`conversationTitle`, …) for the warm/foreground paths. Android only.
+
 Register it on the plugin's messaging service via `<meta-data>` in your app's
 `AndroidManifest.xml` (manifest-merged onto the service the plugin declares):
 

@@ -10,6 +10,7 @@ import android.content.BroadcastReceiver
 import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.media.AudioAttributes
 import android.net.Uri
@@ -18,7 +19,9 @@ import android.os.Build.VERSION.SDK_INT
 import android.os.UserManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import androidx.core.graphics.drawable.IconCompat
 import app.tauri.Logger
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.PluginManager
@@ -158,7 +161,11 @@ class TauriNotificationManager(
       .setOngoing(notification.isOngoing)
       .setPriority(NotificationCompat.PRIORITY_DEFAULT)
       .setGroupSummary(notification.isGroupSummary)
-    if (notification.largeBody != null) {
+    val messages = notification.messages
+    if (!messages.isNullOrEmpty()) {
+      // Chat-style conversation with per-sender circular avatars.
+      applyMessagingStyle(mBuilder, notification, messages)
+    } else if (notification.largeBody != null) {
       // support multiline text
       mBuilder.setStyle(
         NotificationCompat.BigTextStyle()
@@ -198,7 +205,9 @@ class TauriNotificationManager(
     mBuilder.setVisibility(notification.visibility ?: NotificationCompat.VISIBILITY_PRIVATE)
     mBuilder.setOnlyAlertOnce(true)
     mBuilder.setSmallIcon(notification.getSmallIcon(context, getDefaultSmallIcon(context)))
-    mBuilder.setLargeIcon(notification.getLargeIcon(context))
+    // A drawable largeIcon takes precedence; otherwise keep any avatar already set
+    // by the MessagingStyle branch (don't clobber it with a null large icon).
+    notification.getLargeIcon(context)?.let { mBuilder.setLargeIcon(it) }
     val iconColor = notification.getIconColor(config?.iconColor ?: "")
     if (iconColor.isNotEmpty()) {
       try {
@@ -220,6 +229,38 @@ class TauriNotificationManager(
         Logger.error(Logger.tags(TAG), "Failed to trigger notification event: ${e.message}", e)
       }
     }
+  }
+
+  // Build a chat-style notification: each message shows its sender and (circular)
+  // avatar, with an optional conversation title for group rooms. The most recent
+  // sender's avatar is also used as the collapsed-view large icon.
+  private fun applyMessagingStyle(
+    mBuilder: NotificationCompat.Builder,
+    notification: Notification,
+    messages: List<NotificationMessage>
+  ) {
+    val self = Person.Builder().setName(notification.selfName ?: "Me").build()
+    val style = NotificationCompat.MessagingStyle(self)
+      .setConversationTitle(notification.conversationTitle)
+      .setGroupConversation(notification.groupConversation)
+
+    var lastAvatar: Bitmap? = null
+    for (message in messages) {
+      val avatar = Notification.decodeBase64Bitmap(message.avatarBytes)
+      if (avatar != null) lastAvatar = avatar
+      val person = Person.Builder()
+        .setName(message.sender)
+        .apply {
+          message.personKey?.let { setKey(it) }
+          avatar?.let { setIcon(IconCompat.createWithBitmap(it)) }
+        }
+        .build()
+      val timestamp = if (message.timestamp != 0L) message.timestamp else System.currentTimeMillis()
+      style.addMessage(message.text, timestamp, person)
+    }
+
+    mBuilder.setStyle(style)
+    lastAvatar?.let { mBuilder.setLargeIcon(it) }
   }
 
   // Create intents for open/dismiss actions

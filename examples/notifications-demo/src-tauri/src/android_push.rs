@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 
+use base64::Engine;
 use jni::objects::{JClass, JString};
 use jni::sys::jstring;
 use jni::JNIEnv;
@@ -24,12 +25,24 @@ use jni::JNIEnv;
 /// Pretend to fetch the event body from a homeserver. Returns `(sender, body)`.
 ///
 /// Shared by the warm path (`process_silent_push` in `lib.rs`) and the killed
-/// path (the JNI entry below).
+/// path (the JNI entry below). The body is intentionally long so the expandable
+/// `MessagingStyle` notification has something to show.
 pub(crate) fn simulate_matrix_fetch(room_id: &str, event_id: &str) -> (String, String) {
     (
         "Alice".to_string(),
-        format!("New message in {room_id} (event {event_id})"),
+        format!(
+            "Hey! Are you around later to review the PR? I pushed the fix we \
+             discussed and added a couple of tests. (room {room_id}, event {event_id})"
+        ),
     )
+}
+
+/// Base64-encoded demo avatar. Stands in for the bytes a real client gets from
+/// matrix-sdk's media store after downloading the sender/room `mxc://` avatar;
+/// here we just reuse the app icon so no extra asset is committed.
+fn demo_avatar_base64() -> String {
+    const AVATAR_PNG: &[u8] = include_bytes!("../icons/testavatar.png");
+    base64::engine::general_purpose::STANDARD.encode(AVATAR_PNG)
 }
 
 /// Derive a stable, positive notification id from an event id, so re-delivery of
@@ -41,11 +54,13 @@ pub(crate) fn notification_id_for(event_id: &str) -> i32 {
     i32::try_from(hash).unwrap_or(0)
 }
 
-/// JNI entry: `com.test.app.SilentPushBridge.nativeProcessSilentPush(String, String): String`.
+/// JNI entry: `SilentPushBridge.nativeProcessSilentPush(String, String): String`.
 ///
 /// Inputs are the app data directory path and the FCM data payload as a JSON
-/// object (string → string). Output is JSON `{ "id", "title", "body",
-/// "channelId" }` for Kotlin to post, or `null` on failure.
+/// object (string → string). Output is the notification content as JSON
+/// (`id`, `channelId`, `conversationTitle`, `selfName`, and a `messages` array of
+/// `{ sender, personKey, text, timestamp, avatarBytes }`) for Kotlin to post, or
+/// `null` on failure.
 ///
 /// `data_dir` is the app's data directory (the same path Tauri's path API
 /// resolves to on Android); a real client opens its on-disk store (e.g. the
@@ -111,11 +126,30 @@ fn process(env: &mut JNIEnv, data_dir: &JString, data_json: &JString) -> Result<
         simulate_matrix_fetch(&room_id, &event_id)
     });
 
+    // A real client would resolve the sender's matrix id and download their (or
+    // the room's) avatar via matrix-sdk; here we derive a key and reuse the icon.
+    let sender_key = format!("@{}:matrix.org", sender.to_lowercase());
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(0));
+
+    // MessagingStyle: the plugin decodes `avatarBytes` and renders a chat-style
+    // notification with the sender's circular avatar and the room as the title.
     let out = serde_json::json!({
         "id": notification_id_for(&event_id),
+        "channelId": "default",
         "title": sender,
         "body": body,
-        "channelId": "default",
+        "conversationTitle": room_id,
+        "groupConversation": true,
+        "selfName": "Me",
+        "messages": [{
+            "sender": sender,
+            "personKey": sender_key,
+            "text": body,
+            "timestamp": now_ms,
+            "avatarBytes": demo_avatar_base64(),
+        }],
     });
     Ok(out.to_string())
 }

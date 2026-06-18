@@ -172,6 +172,39 @@ impl<R: Runtime> NotificationsBuilder<R> {
         self
     }
 
+    /// Append a chat message, rendering the notification with Android
+    /// `MessagingStyle` (per-sender circular avatars). Adding any message takes
+    /// precedence over `largeBody` / `inboxLines`. Android only.
+    #[must_use]
+    pub fn message(mut self, message: NotificationMessage) -> Self {
+        self.data.messages.push(message);
+        self
+    }
+
+    /// Conversation title shown above the messages (typically the room name for a
+    /// group conversation). Used with [`message`](Self::message). Android only.
+    #[must_use]
+    pub fn conversation_title(mut self, title: impl Into<String>) -> Self {
+        self.data.conversation_title.replace(title.into());
+        self
+    }
+
+    /// Mark the conversation as a group (multiple participants), which lets the
+    /// system show the conversation title. Android only.
+    #[must_use]
+    pub const fn group_conversation(mut self) -> Self {
+        self.data.group_conversation = true;
+        self
+    }
+
+    /// Display name of the local user in a `MessagingStyle` conversation
+    /// (defaults to "Me"). Android only.
+    #[must_use]
+    pub fn self_name(mut self, name: impl Into<String>) -> Self {
+        self.data.self_name.replace(name.into());
+        self
+    }
+
     /// Defines an action type for this notification.
     #[must_use]
     pub fn action_type_id(mut self, action_type_id: impl Into<String>) -> Self {
