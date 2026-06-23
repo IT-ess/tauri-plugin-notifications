@@ -26,6 +26,9 @@
       "windows": {
         "toastActivatorClsid": "{757B33CB-099E-4AA9-8741-314D2B54B59D}"
       }
+    },
+    "deep-link": {
+      "mobile": [{ "scheme": ["matrix"] }]
     }
   },
   "bundle": {

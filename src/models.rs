@@ -237,6 +237,12 @@ pub struct NotificationData {
     /// replacing it. Android only.
     #[serde(default = "default_true")]
     pub(crate) append_messages: bool,
+    /// Android only. When set, tapping the notification fires an `ACTION_VIEW`
+    /// intent for this URI (a deep link, e.g. `matrix:roomid/…`) pinned to the
+    /// app's own package, instead of launching the default activity. The app's
+    /// matching `<intent-filter>` (e.g. via `tauri-plugin-deep-link`) then
+    /// receives it. Replaces the `notificationClicked` event for that tap.
+    pub(crate) deep_link: Option<String>,
 }
 
 const fn default_true() -> bool {
@@ -333,6 +339,7 @@ impl Default for NotificationData {
             group_conversation: false,
             self_name: None,
             append_messages: true,
+            deep_link: None,
         }
     }
 }

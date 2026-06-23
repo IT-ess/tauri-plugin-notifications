@@ -7,6 +7,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
@@ -40,6 +41,10 @@ const val REMOTE_INPUT_KEY = "NotificationRemoteInput"
 const val DEFAULT_NOTIFICATION_CHANNEL_ID = "default"
 const val DEFAULT_PRESS_ACTION = "tap"
 const val TAG = "NotificationsPlugin"
+
+// MIME type set on a deep-link tap intent purely so `getType()` is non-null (see
+// `buildIntent`). Any non-null, non-"text/plain" type works; the value is unused.
+private const val DEEP_LINK_INTENT_TYPE = "application/octet-stream"
 
 // Upper bound on messages retained in an accumulating MessagingStyle notification.
 private const val MAX_MESSAGES = 25
@@ -366,6 +371,32 @@ class TauriNotificationManager(
   }
 
   private fun buildIntent(notification: Notification, action: String?): Intent {
+    // A deep link only governs the main press action ("tap"), not action
+    // buttons. When set, the tap fires ACTION_VIEW for the URI, targeting this
+    // app's own launcher activity by explicit component so the OS routes it
+    // straight there — never a chooser or another app that registered the
+    // scheme. Tauri's deep-link plugin then reports the URL via `onOpenUrl`.
+    val deepLink = notification.deepLink
+    if (deepLink != null && action == DEFAULT_PRESS_ACTION) {
+      val component = if (activity != null) {
+        ComponentName(context, activity.javaClass)
+      } else {
+        context.packageManager.getLaunchIntentForPackage(context.packageName)?.component
+      }
+      return Intent(Intent.ACTION_VIEW).apply {
+        this.component = component
+        addCategory(Intent.CATEGORY_BROWSABLE)
+        // setDataAndType with a NON-NULL type: works around a crash in tao
+        // (Tauri's windowing layer, ndk_glue) where an ACTION_VIEW intent whose
+        // getType() is null panics — and the panic aborts the process because it
+        // unwinds across a JNI callback. The type is otherwise unused; tao reads
+        // the deep link from the data URI (getDataString). Because we target an
+        // explicit component, the typed intent doesn't need a matching
+        // intent-filter data type.
+        setDataAndType(Uri.parse(deepLink), DEEP_LINK_INTENT_TYPE)
+        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+      }
+    }
     val intent = if (activity != null) {
       Intent(context, activity.javaClass)
     } else {
