@@ -161,6 +161,17 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
       val storage = NotificationStorage(context, ObjectMapper())
       val manager = TauriNotificationManager(storage, null, context, null)
       manager.createNotificationChannel()
+      // The warm path sets `sourceJson` from the raw invoke args so a tap can
+      // surface the notification's `extra` payload (see `onIntent` →
+      // `extractLocalNotificationData`). Background callers have no invoke, so
+      // synthesize a minimal `sourceJson` carrying just `extra` — enough to
+      // round-trip the payload (e.g. a Matrix room_id/event_id) to JS on click,
+      // without bloating the click PendingIntent with messages/avatar bytes.
+      if (notification.sourceJson == null) {
+        notification.extra?.let { extra ->
+          notification.sourceJson = JSObject().apply { put("extra", extra) }.toString()
+        }
+      }
       return manager.schedule(notification)
     }
   }
