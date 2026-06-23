@@ -214,6 +214,17 @@ impl<R: Runtime> NotificationsBuilder<R> {
         self
     }
 
+    /// Android only. Make tapping the notification open a deep link
+    /// (`ACTION_VIEW` for this URI, e.g. `matrix:roomid/…`) pinned to the app's
+    /// own package, instead of launching the default activity. The app's
+    /// matching `<intent-filter>` receives it (e.g. via `tauri-plugin-deep-link`).
+    /// This replaces the `notificationClicked` event for that tap.
+    #[must_use]
+    pub fn deep_link(mut self, uri: impl Into<String>) -> Self {
+        self.data.deep_link.replace(uri.into());
+        self
+    }
+
     /// Defines an action type for this notification.
     #[must_use]
     pub fn action_type_id(mut self, action_type_id: impl Into<String>) -> Self {

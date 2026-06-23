@@ -45,6 +45,17 @@ pub(crate) fn demo_avatar_base64() -> String {
     base64::engine::general_purpose::STANDARD.encode(AVATAR_PNG)
 }
 
+/// Build the canonical Matrix URI (MSC2312) for an event in a room, e.g.
+/// `matrix:roomid/abc:matrix.org/e/xyz` from `!abc:matrix.org` / `$xyz`. The
+/// notification's tap fires `ACTION_VIEW` for this, which the app's `matrix:`
+/// intent-filter routes to `tauri-plugin-deep-link`. Sigils (`!`/`$`) are
+/// dropped; the spec keeps `:` literal in the path.
+pub(crate) fn matrix_uri(room_id: &str, event_id: &str) -> String {
+    let room = room_id.strip_prefix('!').unwrap_or(room_id);
+    let event = event_id.strip_prefix('$').unwrap_or(event_id);
+    format!("matrix:roomid/{room}/e/{event}")
+}
+
 /// Derive a stable, positive notification id from a conversation key (the room
 /// id). Using the room as the key means every message in that room lands in the
 /// same notification, so the plugin accumulates them into one conversation
@@ -148,13 +159,10 @@ fn process(env: &mut JNIEnv, data_dir: &JString, data_json: &JString) -> Result<
         "groupConversation": true,
         "selfName": "Me",
         "appendMessages": true,
-        // Echoed back to JS via `notificationClicked` when the user taps the
-        // notification, so the app can open the exact room/event. Mirrors the
-        // warm path's `.extra("room_id", …).extra("event_id", …)` in lib.rs.
-        "extra": {
-            "room_id": room_id,
-            "event_id": event_id,
-        },
+        // Tapping the notification opens this Matrix deep link (ACTION_VIEW),
+        // routed by the app's `matrix:` intent-filter to tauri-plugin-deep-link
+        // (Option B). This replaces the `notificationClicked` event for the tap.
+        "deepLink": matrix_uri(&room_id, &event_id),
         "messages": [{
             "sender": sender,
             "personKey": sender_key,

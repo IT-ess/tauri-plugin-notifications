@@ -68,6 +68,11 @@ class Notification {
   // already showing appends the new messages to that conversation instead of
   // replacing it. Set false to replace (e.g. once the room has been read).
   var appendMessages: Boolean = true
+  // When set, tapping the notification fires an ACTION_VIEW intent for this URI
+  // (a deep link, e.g. "matrix:roomid/…") pinned to this app's package, instead
+  // of launching the default activity. The app's matching <intent-filter>
+  // receives it. See `buildIntent` in TauriNotificationManager.
+  var deepLink: String? = null
 
   fun getSound(context: Context, defaultSound: Int): String? {
     var soundPath: String? = null
