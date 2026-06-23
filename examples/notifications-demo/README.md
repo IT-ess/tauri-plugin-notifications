@@ -53,6 +53,17 @@ can't fire. The demo handles this with:
   `appendMessages` is on, so multiple events in the same room **stack** into one
   conversation notification — the plugin appends each new message to the one already
   showing, even across cold starts.
+- The payload also carries an **`extra`** object (`{ room_id, event_id }`). The plugin
+  stashes it on the notification and round-trips it back to JS via the
+  `notificationClicked` event when the user **taps** the notification — including a
+  notification that was posted while the app was killed (the tap cold-starts the app
+  and a pending click is flushed once the JS listener registers). The demo's
+  `onNotificationClicked` listener reads `room_id`/`event_id` and "opens the room"
+  (the banner at the top of the page); a real client would route to the room timeline
+  and scroll to the event. The warm path sets the same `extra` via the Rust builder's
+  `.extra("room_id", …).extra("event_id", …)`; the killed path includes an `extra`
+  object in the JNI handler's JSON, which `postBackgroundNotification` serializes into
+  the tap intent.
 
 Everything runs in the **main process** — no separate `android:process` is required.
 

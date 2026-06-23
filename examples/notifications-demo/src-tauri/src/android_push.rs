@@ -148,6 +148,13 @@ fn process(env: &mut JNIEnv, data_dir: &JString, data_json: &JString) -> Result<
         "groupConversation": true,
         "selfName": "Me",
         "appendMessages": true,
+        // Echoed back to JS via `notificationClicked` when the user taps the
+        // notification, so the app can open the exact room/event. Mirrors the
+        // warm path's `.extra("room_id", …).extra("event_id", …)` in lib.rs.
+        "extra": {
+            "room_id": room_id,
+            "event_id": event_id,
+        },
         "messages": [{
             "sender": sender,
             "personKey": sender_key,
