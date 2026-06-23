@@ -6,6 +6,7 @@ import app.tauri.notification.Notification
 import app.tauri.notification.NotificationMessage
 import app.tauri.notification.NotificationPlugin
 import app.tauri.notification.SilentPushHandler
+import app.tauri.plugin.JSObject
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -48,6 +49,10 @@ class DemoSilentPushHandler : SilentPushHandler {
         selfName = result.optString("selfName", null)
         appendMessages = result.optBoolean("appendMessages", true)
         messages = parseMessages(result.optJSONArray("messages"))
+        // Carry the room_id/event_id payload so tapping the notification can
+        // open the exact room. The plugin round-trips `extra` to JS via the
+        // `notificationClicked` event (see postBackgroundNotification).
+        result.optJSONObject("extra")?.let { extra = JSObject(it.toString()) }
       }
       NotificationPlugin.postBackgroundNotification(context, notification)
       Log.i(TAG, "posted background notification ${notification.id} from silent push")

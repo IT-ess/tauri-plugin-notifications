@@ -61,6 +61,12 @@
   let pushToken = $state<string | null>(null);
   let pushRegistered = $state(false);
 
+  // The Matrix room a notification tap "opened". In a real client this would be
+  // a route change to the room timeline scrolled to `eventId`; here we just
+  // surface it in a banner to prove the room_id/event_id round-tripped from the
+  // (possibly killed-state) silent push through the tap.
+  let openedRoom = $state<{ roomId: string; eventId: string } | null>(null);
+
   // UnifiedPush (Linux only)
   let distributors = $state<string[]>([]);
   let selectedDistributor = $state<string>("");
@@ -194,6 +200,16 @@
     } catch (error) {
       addLog(`❌ Error simulating silent push: ${error}`);
     }
+  }
+
+  /**
+   * "Opens" the Matrix room a notification tap pointed at. A real client would
+   * navigate to the room timeline and scroll to `eventId`; the demo just shows
+   * a banner. Driven by the `notificationClicked` listener below.
+   */
+  function openRoom(roomId: string, eventId: string) {
+    openedRoom = { roomId, eventId };
+    addLog(`🚪 Opening room ${roomId}${eventId ? ` at event ${eventId}` : ""}`);
   }
 
   /**
@@ -673,12 +689,23 @@
         addLog(`🔘 Action performed - actionId: ${data.actionId}, title: ${data.notification?.title || "No title"}, input: ${data.inputValue || "none"}`);
       });
 
-      // Listen for notification clicks/taps
+      // Listen for notification clicks/taps. For a Matrix-style silent push the
+      // `data` payload carries the `room_id`/`event_id` we stashed in the
+      // notification's `extra` (warm path: `.extra(...)` in lib.rs; killed path:
+      // the `extra` object from the JNI handler). Tapping the notification —
+      // even one posted while the app was killed — re-launches the app and
+      // fires this with that payload, so we can open the room directly.
       const unlistenClicked = await onNotificationClicked(
         (data: NotificationClickedData) => {
           addLog(
             `👆 Notification clicked - ID: ${data.id}, Data: ${JSON.stringify(data.data)}`,
           );
+          const payload = data.data as
+            | { room_id?: string; event_id?: string }
+            | undefined;
+          if (payload?.room_id) {
+            openRoom(payload.room_id, payload.event_id ?? "");
+          }
         },
       );
 
@@ -709,6 +736,26 @@
   </header>
 
   <div class="content">
+    <!-- ====================================================================== -->
+    <!-- OPENED ROOM (notification tap → room_id / event_id) -->
+    <!-- ====================================================================== -->
+    {#if openedRoom}
+      <section class="card opened-room">
+        <h2>🚪 Opened from a notification tap</h2>
+        <p class="description">
+          A notification tap delivered its silent-push payload. A real client
+          would navigate to this room's timeline and scroll to the event.
+        </p>
+        <div class="room-detail"><strong>room_id:</strong> <code>{openedRoom.roomId}</code></div>
+        {#if openedRoom.eventId}
+          <div class="room-detail"><strong>event_id:</strong> <code>{openedRoom.eventId}</code></div>
+        {/if}
+        <div class="button-group" style="margin-top: 1rem;">
+          <button onclick={() => (openedRoom = null)}>Close room</button>
+        </div>
+      </section>
+    {/if}
+
     <!-- ====================================================================== -->
     <!-- PERMISSION SECTION -->
     <!-- ====================================================================== -->
@@ -1354,6 +1401,24 @@
     border-radius: 4px;
     margin-top: 1rem;
     color: #0c4a6e;
+  }
+
+  .opened-room {
+    border: 2px solid #667eea;
+  }
+
+  .room-detail {
+    margin: 0.25rem 0;
+    color: #333;
+  }
+
+  .room-detail code {
+    font-family: "Monaco", "Courier New", monospace;
+    font-size: 0.875rem;
+    background: #f0f0f0;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    word-break: break-all;
   }
 
   .push-token-container {
