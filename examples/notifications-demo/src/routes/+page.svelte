@@ -33,6 +33,10 @@
   import { onMount } from "svelte";
   import { resolveResource } from "@tauri-apps/api/path";
   import { invoke } from "@tauri-apps/api/core";
+  import {
+    onOpenUrl,
+    getCurrent as getCurrentDeepLink,
+  } from "@tauri-apps/plugin-deep-link";
 
   // ============================================================================
   // STATE MANAGEMENT
@@ -210,6 +214,33 @@
   function openRoom(roomId: string, eventId: string) {
     openedRoom = { roomId, eventId };
     addLog(`🚪 Opening room ${roomId}${eventId ? ` at event ${eventId}` : ""}`);
+  }
+
+  /**
+   * Parses a Matrix URI (MSC2312), e.g. `matrix:roomid/abc:hs.org/e/xyz`, back
+   * into a sigil'd room/event id. Returns null for anything we don't recognize.
+   */
+  function parseMatrixUri(
+    url: string,
+  ): { roomId: string; eventId: string } | null {
+    const m = url.match(/^matrix:roomid\/([^/]+)(?:\/e\/(.+))?$/);
+    if (!m) return null;
+    return { roomId: `!${m[1]}`, eventId: m[2] ? `$${m[2]}` : "" };
+  }
+
+  /**
+   * Handles a `matrix:` deep link delivered by tauri-plugin-deep-link — fired
+   * when the user taps a silent-push notification (Option B). This is the same
+   * entry point a real `matrix:` link from anywhere else would hit.
+   */
+  function handleDeepLink(url: string) {
+    addLog(`🔗 Deep link opened: ${url}`);
+    const parsed = parseMatrixUri(url);
+    if (parsed) {
+      openRoom(parsed.roomId, parsed.eventId);
+    } else {
+      addLog(`⚠️ Unrecognized deep link: ${url}`);
+    }
   }
 
   /**
@@ -689,24 +720,32 @@
         addLog(`🔘 Action performed - actionId: ${data.actionId}, title: ${data.notification?.title || "No title"}, input: ${data.inputValue || "none"}`);
       });
 
-      // Listen for notification clicks/taps. For a Matrix-style silent push the
-      // `data` payload carries the `room_id`/`event_id` we stashed in the
-      // notification's `extra` (warm path: `.extra(...)` in lib.rs; killed path:
-      // the `extra` object from the JNI handler). Tapping the notification —
-      // even one posted while the app was killed — re-launches the app and
-      // fires this with that payload, so we can open the room directly.
+      // Listen for notification clicks/taps. Note: the Matrix silent-push
+      // notifications open via a `matrix:` deep link instead (see the deep-link
+      // listener below), so this fires only for *other* notifications that use
+      // the default launcher tap.
       const unlistenClicked = await onNotificationClicked(
         (data: NotificationClickedData) => {
           addLog(
             `👆 Notification clicked - ID: ${data.id}, Data: ${JSON.stringify(data.data)}`,
           );
-          const payload = data.data as
-            | { room_id?: string; event_id?: string }
-            | undefined;
-          if (payload?.room_id) {
-            openRoom(payload.room_id, payload.event_id ?? "");
-          }
         },
+      );
+
+      // Matrix deep links (Option B). A silent-push notification's tap fires an
+      // ACTION_VIEW `matrix:` intent that tauri-plugin-deep-link delivers here.
+      // `getCurrent()` covers the cold-start case (the deep link *launched* the
+      // app); `onOpenUrl` covers taps while it's already running.
+      try {
+        const launchUrls = await getCurrentDeepLink();
+        launchUrls?.forEach(handleDeepLink);
+      } catch (error) {
+        addLog(
+          `Deep link getCurrent unavailable: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+        );
+      }
+      const unlistenDeepLink = await onOpenUrl((urls) =>
+        urls.forEach(handleDeepLink),
       );
 
       addLog("Event listeners registered");
@@ -716,6 +755,7 @@
         unlistenReceived.unregister();
         unlistenAction.unregister();
         unlistenClicked.unregister();
+        unlistenDeepLink();
       };
     } catch (error) {
       addLog(`Error setting up event listeners: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
@@ -743,8 +783,9 @@
       <section class="card opened-room">
         <h2>🚪 Opened from a notification tap</h2>
         <p class="description">
-          A notification tap delivered its silent-push payload. A real client
-          would navigate to this room's timeline and scroll to the event.
+          A notification tap fired a <code>matrix:</code> deep link, delivered
+          here by tauri-plugin-deep-link. A real client would navigate to this
+          room's timeline and scroll to the event.
         </p>
         <div class="room-detail"><strong>room_id:</strong> <code>{openedRoom.roomId}</code></div>
         {#if openedRoom.eventId}

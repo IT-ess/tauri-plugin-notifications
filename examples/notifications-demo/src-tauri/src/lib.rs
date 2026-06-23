@@ -47,8 +47,9 @@ fn process_silent_push<R: tauri::Runtime>(
                 .person_key(sender_key)
                 .avatar_bytes(android_push::demo_avatar_base64()),
         )
-        .extra("room_id", room_id)
-        .extra("event_id", event_id);
+        // Tap opens the Matrix deep link, handled by tauri-plugin-deep-link's
+        // `onOpenUrl` (Option B) — the same path real `matrix:` links take.
+        .deep_link(android_push::matrix_uri(&room_id, &event_id));
 
     // `show()` is async on mobile; the silent-push handler runs on a background
     // thread, so spawn the display work rather than blocking it.
@@ -96,6 +97,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notifications::init())
+        // Handles the `matrix:` deep link a notification tap fires (Option B):
+        // the OS routes the ACTION_VIEW intent here and the plugin reports the
+        // URL to JS via `onOpenUrl` / `getCurrent`.
+        .plugin(tauri_plugin_deep_link::init())
         .invoke_handler(tauri::generate_handler![simulate_silent_push])
         .setup(|app| {
             // Register the Rust-only silent-push handler. On Android, data-only

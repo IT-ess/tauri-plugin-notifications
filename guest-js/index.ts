@@ -157,6 +157,14 @@ interface Options {
    * accumulating a chat thread. Set `false` to replace. Android only.
    */
   appendMessages?: boolean;
+  /**
+   * Android only. When set, tapping the notification opens this deep-link URI
+   * (an `ACTION_VIEW` intent, e.g. `matrix:roomid/…`) pinned to the app's own
+   * package, instead of launching the default activity. The app's matching
+   * `<intent-filter>` receives it (e.g. via `tauri-plugin-deep-link`). Replaces
+   * the `notificationClicked` event for that tap.
+   */
+  deepLink?: string;
 }
 
 /**

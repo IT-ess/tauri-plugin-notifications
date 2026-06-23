@@ -16,6 +16,7 @@
   "dependencies": {
     "@choochmeque/tauri-plugin-notifications-api": "file:../..",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-deep-link": "^2",
     "@tauri-apps/plugin-opener": "^2"
   },
   "devDependencies": {
