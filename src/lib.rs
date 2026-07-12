@@ -59,6 +59,7 @@ mod error;
 #[cfg(desktop)]
 mod listeners;
 mod models;
+pub mod nse;
 
 pub use error::{Error, Result};
 

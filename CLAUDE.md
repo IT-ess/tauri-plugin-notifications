@@ -25,7 +25,7 @@ Rust:
 
 Native test suites:
 - Android: `cd android && ./gradlew testDebugUnitTest` (unit) or `connectedDebugAndroidTest` (instrumented, needs emulator). Sources in `android/src/main/java/app/tauri/notification/`.
-- iOS/macOS: `cd ios && xcodebuild test -scheme tauri-plugin-notifications -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'` (macOS uses `-destination 'platform=macOS'`).
+- iOS/macOS: `cd ios && xcodebuild test -scheme tauri-plugin-notifications-Package -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'` (macOS uses `-scheme tauri-plugin-notifications -destination 'platform=macOS'`). The iOS scheme name differs because the iOS package has a second product (`tauri-plugin-notifications-nse`), so only the `-Package` scheme carries the test action.
 
 Example app: `cd examples/notifications-demo && pnpm install && pnpm tauri dev`.
 

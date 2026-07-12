@@ -3,6 +3,16 @@
 #[cfg(target_os = "android")]
 mod android_push;
 
+// iOS-only silent-push decoding: the C entry point the app's Notification
+// Service Extension resolves via dlsym. See the module docs.
+#[cfg(target_os = "ios")]
+mod ios_push;
+
+// Pure Matrix demo helpers (fetch/format) shared by all silent-push entry
+// points: Android warm + JNI killed paths, and the iOS NSE path.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+mod matrix_demo;
+
 /// Simulates handling a *silent* (data-only) push for a Matrix-style client on
 /// the **warm** path — i.e. while the app/Tauri runtime is alive, driven by
 /// `on_silent_push`. Here we can use the plugin builder directly.
@@ -28,7 +38,7 @@ fn process_silent_push<R: tauri::Runtime>(
     log::info!("silent push (warm): fetching event {event_id} in room {room_id}");
 
     // Stand-in for `GET /_matrix/client/v3/rooms/{room_id}/event/{event_id}`.
-    let (sender, body) = android_push::simulate_matrix_fetch(&room_id, &event_id);
+    let (sender, body) = matrix_demo::simulate_matrix_fetch(&room_id, &event_id);
     // Key the notification by the room so repeated events accumulate into one
     // MessagingStyle conversation (tap the demo button twice to see it stack).
     let id = android_push::notification_id_for(&room_id);
@@ -49,7 +59,7 @@ fn process_silent_push<R: tauri::Runtime>(
         )
         // Tap opens the Matrix deep link, handled by tauri-plugin-deep-link's
         // `onOpenUrl` (Option B) — the same path real `matrix:` links take.
-        .deep_link(android_push::matrix_uri(&room_id, &event_id));
+        .deep_link(matrix_demo::matrix_uri(&room_id, &event_id));
 
     // `show()` is async on mobile; the silent-push handler runs on a background
     // thread, so spawn the display work rather than blocking it.
@@ -76,8 +86,11 @@ fn simulate_silent_push(app: tauri::AppHandle, room_id: String, event_id: String
         data.insert("event_id".to_string(), event_id);
         process_silent_push(&app, &data);
     }
+    // On iOS the silent-push path runs in the Notification Service Extension
+    // (see `ios_push.rs`), a separate process this command can't reach — push a
+    // real payload instead: `xcrun simctl push booted com.alexis.notiftestapp payload.apns`.
     #[cfg(not(target_os = "android"))]
-    log::warn!("simulate_silent_push is Android-only");
+    log::warn!("simulate_silent_push is Android-only; on iOS use `xcrun simctl push`");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
