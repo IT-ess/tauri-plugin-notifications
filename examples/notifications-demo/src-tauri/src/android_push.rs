@@ -22,20 +22,7 @@ use jni::objects::{JClass, JString};
 use jni::sys::jstring;
 use jni::JNIEnv;
 
-/// Pretend to fetch the event body from a homeserver. Returns `(sender, body)`.
-///
-/// Shared by the warm path (`process_silent_push` in `lib.rs`) and the killed
-/// path (the JNI entry below). The body is intentionally long so the expandable
-/// `MessagingStyle` notification has something to show.
-pub(crate) fn simulate_matrix_fetch(room_id: &str, event_id: &str) -> (String, String) {
-    (
-        "Alice".to_string(),
-        format!(
-            "Hey! Are you around later to review the PR? I pushed the fix we \
-             discussed and added a couple of tests. (room {room_id}, event {event_id})"
-        ),
-    )
-}
+use crate::matrix_demo::{matrix_uri, simulate_matrix_fetch};
 
 /// Base64-encoded demo avatar. Stands in for the bytes a real client gets from
 /// matrix-sdk's media store after downloading the sender/room `mxc://` avatar;
@@ -43,17 +30,6 @@ pub(crate) fn simulate_matrix_fetch(room_id: &str, event_id: &str) -> (String, S
 pub(crate) fn demo_avatar_base64() -> String {
     const AVATAR_PNG: &[u8] = include_bytes!("../icons/testavatar.png");
     base64::engine::general_purpose::STANDARD.encode(AVATAR_PNG)
-}
-
-/// Build the canonical Matrix URI (MSC2312) for an event in a room, e.g.
-/// `matrix:roomid/abc:matrix.org/e/xyz` from `!abc:matrix.org` / `$xyz`. The
-/// notification's tap fires `ACTION_VIEW` for this, which the app's `matrix:`
-/// intent-filter routes to `tauri-plugin-deep-link`. Sigils (`!`/`$`) are
-/// dropped; the spec keeps `:` literal in the path.
-pub(crate) fn matrix_uri(room_id: &str, event_id: &str) -> String {
-    let room = room_id.strip_prefix('!').unwrap_or(room_id);
-    let event = event_id.strip_prefix('$').unwrap_or(event_id);
-    format!("matrix:roomid/{room}/e/{event}")
 }
 
 /// Derive a stable, positive notification id from a conversation key (the room
