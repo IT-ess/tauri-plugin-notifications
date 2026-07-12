@@ -2,7 +2,8 @@
 
 Demo app for `tauri-plugin-notifications` (Tauri + SvelteKit). It exercises every
 plugin feature; the notable one documented here is **silent push handling on
-Android**, including delivery while the app is killed.
+Android and iOS**, including delivery while the app is killed (Android: FCM
+service + JNI; iOS: Notification Service Extension).
 
 ## Run (desktop)
 
@@ -146,6 +147,69 @@ and send a **data-only** message via FCM HTTP v1 while the app is force-stopped:
 ```
 
 The same `DemoSilentPushHandler` runs.
+
+## Silent push (iOS) — Notification Service Extension
+
+iOS never restarts a force-quit app for a push, so the decode step runs in a
+**Notification Service Extension** instead — a separate target
+(`notifications-demo_NSE` in `src-tauri/gen/apple/project.yml`) that iOS
+launches for every `mutable-content: 1` push, in any app state. Its principal
+class subclasses the plugin's `TauriNotificationService`
+(`gen/apple/NotificationService/NotificationService.swift`), which calls the
+Rust handler `src-tauri/src/ios_push.rs` exports via
+`ios_silent_push_handler!` from the same `libapp.a` the app links.
+
+### Build it, and what the Simulator can(not) show
+
+```sh
+# Build + run on a simulator (also builds and embeds the NSE):
+pnpm tauri ios dev "iPhone 17"
+
+# Grant the notification permission in the app, then push the Matrix payload:
+xcrun simctl push booted com.alexis.notiftestapp scripts/matrix-push.apns
+
+# Confirm the extension is installed and registered with the system:
+xcrun simctl spawn booted pluginkit -m -i com.alexis.notiftestapp.nse
+```
+
+**Important Simulator limitation:** payloads injected with `xcrun simctl push`
+are *not* routed through Notification Service Extensions — the banner shows the
+payload's own fallback alert (`SINGLE_UNREAD`), which proves delivery, permission,
+and the fallback path, but **not** the rewrite. To watch the NSE actually rewrite
+the push you need a **real APNs push**:
+
+- a physical device, or
+- an Apple-Silicon Mac Simulator, which accepts real **APNs sandbox** pushes
+  (Xcode 14+): register for push in the app to obtain the simulator's device
+  token, then send the payload to `api.sandbox.push.apple.com` with your `.p8`
+  key for the app's bundle id.
+
+Then expect:
+- A banner shows **Alice** and the fetched message body — the NSE rewrote the
+  push, whose own alert is just the `SINGLE_UNREAD` fallback.
+- It also works with the app **force-quit** (swipe it away in the app switcher
+  first) — the whole point over `content-available` background pushes.
+- Send one without `room_id`: the handler declines (`None`) and the untouched
+  fallback alert shows instead.
+- Tap the banner with the app running: the demo UI logs `notificationClicked`
+  with `data.deepLink` / `room_id` / `event_id` (`id` is `-1` for remote
+  notifications — the NSE can't change the identifier APNs assigned).
+- NSE logs: Console.app → simulator/device → filter subsystem
+  `app.tauri.notifications`.
+
+The extension flow itself (payload flattening → `dlsym` into Rust → JSON decode
+→ content rewrite, plus every fallback path) is covered end-to-end by the
+plugin's Swift tests in `ios/NSE/Tests`, which stub the Rust symbols from the
+test bundle — so it runs in CI without APNs.
+
+The app group (`group.com.alexis.notiftestapp`, on both targets) is what a real Matrix
+client uses to share its store: the extension passes the group container path
+to the Rust handler as `data_dir`.
+
+If Xcode's package resolution can't find the plugin's Swift package, run
+`cargo build --target aarch64-apple-ios` once at the repo root (it generates
+`.tauri/tauri-api`, which `ios/Package.swift` depends on), and after editing
+`project.yml` re-run `xcodegen generate` in `src-tauri/gen/apple`.
 
 ## Caveats
 

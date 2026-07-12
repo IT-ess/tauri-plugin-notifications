@@ -8,9 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		0BAC1D6C21F13F2B561819E1 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4DE7D32083CD4DDAB98DB356 /* Metal.framework */; };
+		1ABFCF2E7932F5B240A13863 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = 52E54D3B8E98DFFCF69638F0 /* libapp.a */; };
 		330F79E50DE0F081559DD534 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6E6B1137C0CFB3F307607D07 /* UIKit.framework */; };
+		338446D3D20F05AC896E3031 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F2952782657A3C85626BB111 /* Security.framework */; };
 		371B7FC253581EDF71EC7C72 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0C0256F572631AF949550BAF /* WebKit.framework */; };
 		4D92858C3DDF64E947146F3C /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03427FA10A64D1E581C79DA6 /* MetalKit.framework */; };
+		4EC5B630B2AF1CF747304A83 /* tauri-plugin-notifications-nse in Frameworks */ = {isa = PBXBuildFile; productRef = D8BEBFA714D1D2DB28220811 /* tauri-plugin-notifications-nse */; };
 		6C01E3D2775C115B219542E6 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 93230533A8965B46B1A2FCE6 /* QuartzCore.framework */; };
 		7C2EF92004126EF3E6A7FB82 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = ABE76EB208E20282194E6FC1 /* main.mm */; };
 		7FDE1F72DB8A3B6F6C8F8ECA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 98D8FA4E23FEFDB9C6154028 /* Assets.xcassets */; };
@@ -19,25 +22,61 @@
 		A98D55AEB23591E6E9FC9AA8 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F2952782657A3C85626BB111 /* Security.framework */; };
 		ADB9C9906C96E51419A6BF5C /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 9F871F3497F27E63C315CD27 /* LaunchScreen.storyboard */; };
 		B3E42E9CC0FA1CC67193FF88 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 53360DEB65E4CEAF5FE9BE5E /* libapp.a */; };
+		C60A9C1BB40D6AC2293F24AE /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1CD57D28B5D1DDC384C43B2 /* NotificationService.swift */; };
+		DD4CE2FDE23C38D000FC3AA2 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 53360DEB65E4CEAF5FE9BE5E /* libapp.a */; };
+		F3F21372AFD2468AD05A9637 /* notifications-demo_NSE.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D975C07B4817AA5EF8E7F75B /* notifications-demo_NSE.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4E8AA773F6608821B9E8F8A2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3A39BFFEDEF5D08D76C56303 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 385C4A71C3E92251B37450A4;
+			remoteInfo = "notifications-demo_NSE";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		052D96405092661DE40B7C5F /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F3F21372AFD2468AD05A9637 /* notifications-demo_NSE.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		03427FA10A64D1E581C79DA6 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		0C0256F572631AF949550BAF /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		224A75EEDEE52582C97383D5 /* notifications-demo_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "notifications-demo_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		287F020246EA3218E066D255 /* ios_push.rs */ = {isa = PBXFileReference; path = ios_push.rs; sourceTree = "<group>"; };
+		2EBD1EF76FDF70EA2A21F000 /* android_push.rs */ = {isa = PBXFileReference; path = android_push.rs; sourceTree = "<group>"; };
 		4DE7D32083CD4DDAB98DB356 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		52E54D3B8E98DFFCF69638F0 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		53360DEB65E4CEAF5FE9BE5E /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		5BBCB37F366BE2E92BF41253 /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 		5FBC066CE54FF4384916F103 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
 		631476E24095FBBD72BD9261 /* notifications-demo_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "notifications-demo_iOS.entitlements"; sourceTree = "<group>"; };
+		643A0F391C454B909F491604 /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = ../../../../../ios; sourceTree = SOURCE_ROOT; };
 		6E6B1137C0CFB3F307607D07 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		76DCF7073100F476ADC9C0CD /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
 		881EF425297BD5410F453156 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		88ADF09FD648CEC28E9F7D43 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		93230533A8965B46B1A2FCE6 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		98D8FA4E23FEFDB9C6154028 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9C67F4219AEA4C73C0342CBA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9F871F3497F27E63C315CD27 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		ABE76EB208E20282194E6FC1 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		B1CD57D28B5D1DDC384C43B2 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		C049D719855BFCF4CC8F7940 /* NotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotificationService.entitlements; sourceTree = "<group>"; };
+		D975C07B4817AA5EF8E7F75B /* notifications-demo_NSE.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = "notifications-demo_NSE.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDB115859ABE0BCFE6583B15 /* matrix_demo.rs */ = {isa = PBXFileReference; path = matrix_demo.rs; sourceTree = "<group>"; };
 		F2952782657A3C85626BB111 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		F4AE16599E0637DA30DFE260 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -58,13 +97,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CE82835E6929FC44BAF10686 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DD4CE2FDE23C38D000FC3AA2 /* libapp.a in Frameworks */,
+				4EC5B630B2AF1CF747304A83 /* tauri-plugin-notifications-nse in Frameworks */,
+				338446D3D20F05AC896E3031 /* Security.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0A79DFB87113775722BD551C /* NotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				88ADF09FD648CEC28E9F7D43 /* Info.plist */,
+				C049D719855BFCF4CC8F7940 /* NotificationService.entitlements */,
+				B1CD57D28B5D1DDC384C43B2 /* NotificationService.swift */,
+			);
+			path = NotificationService;
+			sourceTree = "<group>";
+		};
 		11AE9422D5E4FD359A2A0DFA /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				224A75EEDEE52582C97383D5 /* notifications-demo_iOS.app */,
+				D975C07B4817AA5EF8E7F75B /* notifications-demo_NSE.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -92,6 +152,8 @@
 				9F871F3497F27E63C315CD27 /* LaunchScreen.storyboard */,
 				56380208D8D9E64C96F19EF2 /* Externals */,
 				88D8CBDD5D83104403A8F9A6 /* notifications-demo_iOS */,
+				0A79DFB87113775722BD551C /* NotificationService */,
+				8702D689B61081EE01AB9B38 /* Packages */,
 				A6966174359C2979FE4A0634 /* Sources */,
 				5905C36D652D459C00117EEA /* src */,
 				2FD453AE39581B662AAE2F17 /* Frameworks */,
@@ -102,6 +164,7 @@
 		56380208D8D9E64C96F19EF2 /* Externals */ = {
 			isa = PBXGroup;
 			children = (
+				E9276B32AD49CC1C50FEB54F /* arm64 */,
 			);
 			path = Externals;
 			sourceTree = "<group>";
@@ -109,11 +172,22 @@
 		5905C36D652D459C00117EEA /* src */ = {
 			isa = PBXGroup;
 			children = (
+				2EBD1EF76FDF70EA2A21F000 /* android_push.rs */,
+				287F020246EA3218E066D255 /* ios_push.rs */,
 				5BBCB37F366BE2E92BF41253 /* lib.rs */,
 				F4AE16599E0637DA30DFE260 /* main.rs */,
+				EDB115859ABE0BCFE6583B15 /* matrix_demo.rs */,
 			);
 			name = src;
 			path = ../../src;
+			sourceTree = "<group>";
+		};
+		8702D689B61081EE01AB9B38 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				643A0F391C454B909F491604 /* ios */,
+			);
+			name = Packages;
 			sourceTree = "<group>";
 		};
 		88D8CBDD5D83104403A8F9A6 /* notifications-demo_iOS */ = {
@@ -142,6 +216,14 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
+		BAEF85268FAC56439CE2D4D5 /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				52E54D3B8E98DFFCF69638F0 /* libapp.a */,
+			);
+			path = debug;
+			sourceTree = "<group>";
+		};
 		C0D95F3ED60C92F1E75CC54E /* bindings */ = {
 			isa = PBXGroup;
 			children = (
@@ -150,9 +232,44 @@
 			path = bindings;
 			sourceTree = "<group>";
 		};
+		E9276B32AD49CC1C50FEB54F /* arm64 */ = {
+			isa = PBXGroup;
+			children = (
+				BAEF85268FAC56439CE2D4D5 /* debug */,
+			);
+			path = arm64;
+			sourceTree = "<group>";
+		};
+		"TEMP_1D6ED04B-C016-4632-8074-EAB5452231FE" /* x86_64 */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = x86_64;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		385C4A71C3E92251B37450A4 /* notifications-demo_NSE */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B04DA7AF6E8F53B024E34A26 /* Build configuration list for PBXNativeTarget "notifications-demo_NSE" */;
+			buildPhases = (
+				8F07341911471CD6023027BF /* Build Rust Code */,
+				04EEAC66CE705007349D72AE /* Sources */,
+				CE82835E6929FC44BAF10686 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "notifications-demo_NSE";
+			packageProductDependencies = (
+				D8BEBFA714D1D2DB28220811 /* tauri-plugin-notifications-nse */,
+			);
+			productName = "notifications-demo_NSE";
+			productReference = D975C07B4817AA5EF8E7F75B /* notifications-demo_NSE.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		42A923D1DFE0975177B540AE /* notifications-demo_iOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 904604942E5281B13FB6FA6C /* Build configuration list for PBXNativeTarget "notifications-demo_iOS" */;
@@ -161,10 +278,12 @@
 				227D95CAB90E8F4AF737D3C0 /* Sources */,
 				722FB8E6B55ED83C9C08102C /* Resources */,
 				05C3BE8CB09F5EFEA6D9CC65 /* Frameworks */,
+				052D96405092661DE40B7C5F /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				E39977DB9541592EA968AB32 /* PBXTargetDependency */,
 			);
 			name = "notifications-demo_iOS";
 			packageProductDependencies = (
@@ -181,9 +300,10 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
 			};
 			buildConfigurationList = B22F0AC71DCCD61AD70EFFDB /* Build configuration list for PBXProject "notifications-demo" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -192,10 +312,15 @@
 			);
 			mainGroup = 4CD4AB4D773AEF4FAA31B2FC;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7C1A7EC8E8EA064F68889E3A /* XCLocalSwiftPackageReference "../../../../../ios" */,
+			);
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 11AE9422D5E4FD359A2A0DFA /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				385C4A71C3E92251B37450A4 /* notifications-demo_NSE */,
 				42A923D1DFE0975177B540AE /* notifications-demo_iOS */,
 			);
 		};
@@ -209,12 +334,32 @@
 				7FDE1F72DB8A3B6F6C8F8ECA /* Assets.xcassets in Resources */,
 				ADB9C9906C96E51419A6BF5C /* LaunchScreen.storyboard in Resources */,
 				860A8CCD38C6A0645313E536 /* assets in Resources */,
+				1ABFCF2E7932F5B240A13863 /* libapp.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		8F07341911471CD6023027BF /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "pnpm tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+		};
 		90816ED545F56E0D151AF083 /* Build Rust Code */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -239,6 +384,14 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		04EEAC66CE705007349D72AE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C60A9C1BB40D6AC2293F24AE /* NotificationService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		227D95CAB90E8F4AF737D3C0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -249,7 +402,45 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		E39977DB9541592EA968AB32 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 385C4A71C3E92251B37450A4 /* notifications-demo_NSE */;
+			targetProxy = 4E8AA773F6608821B9E8F8A2 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		2D397CF20CDAD69609C34726 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				ARCHS = (
+					arm64,
+				);
+				CODE_SIGN_ENTITLEMENTS = NotificationService/NotificationService.entitlements;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = NotificationService/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				OTHER_LDFLAGS = "$(inherited) -Wl,-u,_tauri_notifications_process_silent_push -Wl,-u,_tauri_notifications_silent_push_free";
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexis.notiftestapp.nse;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = debug;
+		};
 		50468EF2010664166926DC95 /* release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -273,7 +464,7 @@
 				);
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.test.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexis.notiftestapp;
 				PRODUCT_NAME = "notifications-demo";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -304,13 +495,43 @@
 				);
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.test.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexis.notiftestapp;
 				PRODUCT_NAME = "notifications-demo";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
 			};
 			name = debug;
+		};
+		78A53189BD43D927BE540149 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				ARCHS = (
+					arm64,
+				);
+				CODE_SIGN_ENTITLEMENTS = NotificationService/NotificationService.entitlements;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = NotificationService/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				OTHER_LDFLAGS = "$(inherited) -Wl,-u,_tauri_notifications_process_silent_push -Wl,-u,_tauri_notifications_silent_push_free";
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexis.notiftestapp.nse;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = release;
 		};
 		C09A4677EF95F8DF4869692C /* debug */ = {
 			isa = XCBuildConfiguration;
@@ -443,6 +664,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = debug;
 		};
+		B04DA7AF6E8F53B024E34A26 /* Build configuration list for PBXNativeTarget "notifications-demo_NSE" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2D397CF20CDAD69609C34726 /* debug */,
+				78A53189BD43D927BE540149 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
 		B22F0AC71DCCD61AD70EFFDB /* Build configuration list for PBXProject "notifications-demo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -453,6 +683,20 @@
 			defaultConfigurationName = debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		7C1A7EC8E8EA064F68889E3A /* XCLocalSwiftPackageReference "../../../../../ios" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../../../../ios;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D8BEBFA714D1D2DB28220811 /* tauri-plugin-notifications-nse */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = "tauri-plugin-notifications-nse";
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3A39BFFEDEF5D08D76C56303 /* Project object */;
 }

@@ -593,6 +593,122 @@ silent push through `on_silent_push`) **and** the killed-state path (an
 `adb`-driven cold-start test that needs no Firebase backend) — lives in
 [`examples/notifications-demo`](examples/notifications-demo); see its README.
 
+#### Silent pushes decoded in a Notification Service Extension **(iOS)**
+
+iOS has no equivalent of Android's "run the messaging service after the app was
+killed": background (`content-available`) pushes are throttled and never
+delivered to a force-quit app. The reliable pattern — the one Matrix clients
+use — is a **Notification Service Extension (NSE)**: send the push with
+`mutable-content: 1` and a generic fallback `alert`, and iOS launches your
+extension in **every** app state (force-quit included) with ~30 s to rewrite
+the content before display:
+
+```json
+{
+  "aps": {
+    "mutable-content": 1,
+    "content-available": 1,
+    "alert": { "loc-key": "SINGLE_UNREAD", "loc-args": [] }
+  },
+  "room_id": "!abc:matrix.org",
+  "event_id": "$xyz"
+}
+```
+
+An NSE is a separate Xcode target the plugin can't create for you, but it ships
+both halves of the work:
+
+**1. The Rust handler** — same role as the Android killed-state JNI entry. In
+your `src-tauri` crate (the extension links the same `libapp.a` static library
+Tauri already builds; linking it does **not** start Tauri):
+
+```rust
+// src-tauri/src/ios_push.rs — add `#[cfg(target_os = "ios")] mod ios_push;` in lib.rs
+use std::collections::HashMap;
+use tauri_plugin_notifications::NotificationData;
+
+fn handle_silent_push(
+    data_dir: &str,                    // the App Group container path
+    data: HashMap<String, String>,     // top-level custom keys (minus `aps`)
+) -> Option<NotificationData> {
+    let room_id = data.get("room_id")?;
+    let event_id = data.get("event_id")?;
+    // Open your store under `data_dir` (e.g. matrix-sdk's NotificationClient),
+    // fetch/decrypt the event, then describe the notification:
+    Some(
+        NotificationData::builder()
+            .title("Alice")
+            .body("decrypted message body")
+            .group(room_id) // → threadIdentifier: stacks the room's messages
+            .extra("deepLink", format!("matrix:roomid/{room_id}/e/{event_id}"))
+            .build(),
+    )
+}
+
+tauri_plugin_notifications::ios_silent_push_handler!(handle_silent_push);
+```
+
+Returning `None` keeps the push's own content, so the fallback `alert`
+(`SINGLE_UNREAD` above) is shown. String values in `extra` land in the
+notification's `userInfo` and surface in the `notificationClicked` event's
+`data` when tapped — put your deep link there and navigate from JS. (The `id`
+field is ignored: an NSE cannot change the identifier APNs assigned, so remote
+notifications report `id: -1` in events.)
+
+**2. The Swift side** — in Xcode: *File → New → Target → Notification Service
+Extension*, then:
+
+- Add the plugin's `ios/` directory as a local Swift package and link the
+  **`tauri-plugin-notifications-nse`** product to the extension target (it is
+  Tauri-free; never link the main plugin product into an extension).
+- Link **`libapp.a`** into the extension and add these `OTHER_LDFLAGS`:
+  `-Wl,-u,_tauri_notifications_process_silent_push -Wl,-u,_tauri_notifications_silent_push_free`
+  — the archive's handler object file is dead-stripped without them (and a
+  forgotten `ios_silent_push_handler!` invocation becomes a visible
+  "undefined symbol" link error instead of a silent fallback). Do **not** add
+  `-ObjC`.
+- Replace the template class with:
+
+```swift
+import TauriPluginNotificationsNSE
+
+final class NotificationService: TauriNotificationService {}
+```
+
+- Add an **App Group** to both the app and extension targets, put the group id
+  in the extension's Info.plist under **`TauriNotificationsAppGroup`**, and
+  keep the store your handler reads inside that group's container — the
+  extension passes the container path to Rust as `data_dir` (extension and app
+  sandboxes are otherwise disjoint).
+
+**Failure semantics** — the notification is never dropped; every failure shows
+the payload's fallback `alert` instead:
+
+| Case | Result |
+| --- | --- |
+| `ios_silent_push_handler!` not invoked / symbols not linked | fallback alert (or a link error with the `-Wl,-u` flags) |
+| Handler returns `None` or panics | fallback alert |
+| Handler's JSON fails to decode | fallback alert |
+| Handler exceeds the ~30 s budget | `serviceExtensionTimeWillExpire` delivers the fallback |
+
+**Testing:** locally injected payloads (`xcrun simctl push`) are **not** run
+through service extensions — the Simulator shows the fallback alert directly,
+which only proves the fallback path. To see the NSE rewrite content you need a
+**real APNs push**: either a physical device, or an Apple-Silicon Mac
+Simulator, which supports real APNs-sandbox pushes since Xcode 14 (register
+for push in the app to get a token, then send to
+`api.sandbox.push.apple.com` with your `.p8` key). The Swift test suite
+(`ios/NSE/Tests`) covers the full extension flow — payload flattening, the
+`dlsym` handoff, JSON decode, and content rewrite — without APNs.
+[`examples/notifications-demo`](examples/notifications-demo) contains a
+complete working setup: the extension target in
+`src-tauri/gen/apple/project.yml`, the handler in `src-tauri/src/ios_push.rs`.
+
+**Consuming from crates.io:** the Swift package lives inside the Rust crate
+checkout. Reference it by path from a git checkout/vendored copy, or copy the
+two dependency-free source files under `ios/NSE/Sources/` straight into your
+extension target.
+
 ## API Reference
 
 ### `isPermissionGranted()`
