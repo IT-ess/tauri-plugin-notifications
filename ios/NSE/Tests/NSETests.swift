@@ -86,7 +86,6 @@ final class TauriNotificationServiceTests: XCTestCase {
           "unreadCount": 2,
           "encrypted": true
         },
-        "messages": [{"sender": "Alice", "text": "ignored on iOS"}],
         "channelId": "android-only-ignored"
       }
       """
@@ -133,6 +132,52 @@ final class TauriNotificationServiceTests: XCTestCase {
 
     XCTAssertEqual(delivered.body, "SINGLE_UNREAD")
   }
+
+  /// `messages` (the Android `MessagingStyle` fields) upgrades the delivery to
+  /// a communication notification via `content.updating(from:)`. That rewrite
+  /// returns a *copy*; this guards that the copy still carries every field the
+  /// handler set (title/body/thread/userInfo survive the intent attachment).
+  func testCommunicationMessageKeepsContentFields() {
+    stubbedResponse = """
+      {
+        "title": "Alice",
+        "body": "Hey! Are you around later?",
+        "group": "!abc:matrix.org",
+        "extra": {"deepLink": "matrix:roomid/abc:matrix.org/e/xyz"},
+        "conversationTitle": "Rust enjoyers",
+        "groupConversation": true,
+        "messages": [{
+          "sender": "Alice",
+          "personKey": "@alice:matrix.org",
+          "text": "Hey! Are you around later?",
+          "avatarBytes": "\(base64Pixel)"
+        }]
+      }
+      """
+
+    let delivered = runService(makeMatrixRequest())
+
+    XCTAssertEqual(delivered.title, "Alice")
+    XCTAssertEqual(delivered.body, "Hey! Are you around later?")
+    XCTAssertEqual(delivered.threadIdentifier, "!abc:matrix.org")
+    XCTAssertEqual(delivered.userInfo["deepLink"] as? String, "matrix:roomid/abc:matrix.org/e/xyz")
+    XCTAssertEqual(delivered.userInfo["room_id"] as? String, "!abc:matrix.org")
+  }
+
+  /// A message without a sender cannot become a communication notification;
+  /// the regular rewrite must still apply untouched.
+  func testMessageWithoutSenderSkipsCommunicationRewrite() {
+    stubbedResponse = #"{"title": "Alice", "messages": [{"text": "no sender"}]}"#
+
+    let delivered = runService(makeMatrixRequest())
+
+    XCTAssertEqual(delivered.title, "Alice")
+    XCTAssertEqual(delivered.body, "SINGLE_UNREAD")
+  }
+
+  /// A 1x1 transparent PNG, as `NotificationMessage.avatar_bytes` base64.
+  private let base64Pixel =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
   func testPartialResponseKeepsFallbackFieldsItOmits() {
     stubbedResponse = #"{"title": "Alice"}"#

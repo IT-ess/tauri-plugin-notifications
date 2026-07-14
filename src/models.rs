@@ -226,6 +226,8 @@ pub struct NotificationData {
     pub(crate) silent: bool,
     /// Chat messages rendered with Android `MessagingStyle` (per-sender avatars).
     /// When non-empty this takes precedence over `largeBody` / `inboxLines`.
+    /// On iOS (silent-push NSE path) the last message upgrades the delivery to
+    /// a communication notification: the sender's avatar replaces the app icon.
     #[serde(default)]
     pub(crate) messages: Vec<NotificationMessage>,
     pub(crate) conversation_title: Option<String>,
@@ -428,7 +430,15 @@ impl NotificationDataBuilder {
 
     /// Append a chat message, rendering the notification with Android
     /// `MessagingStyle` (per-sender circular avatars). Adding any message takes
-    /// precedence over `largeBody` / `inboxLines`. Android only.
+    /// precedence over `largeBody` / `inboxLines`.
+    ///
+    /// On iOS this only applies to the silent-push NSE path
+    /// ([`ios_silent_push_handler!`](crate::ios_silent_push_handler)): the last
+    /// message with a sender turns the delivery into a communication
+    /// notification (`INSendMessageIntent`), drawing the sender's avatar
+    /// instead of the app icon. The host app must carry the
+    /// `com.apple.developer.usernotifications.communication` entitlement and
+    /// declare `INSendMessageIntent` in its Info.plist `NSUserActivityTypes`.
     #[must_use]
     pub fn message(mut self, message: NotificationMessage) -> Self {
         self.data.messages.push(message);
@@ -436,7 +446,9 @@ impl NotificationDataBuilder {
     }
 
     /// Conversation title shown above the messages (typically the room name for a
-    /// group conversation). Used with [`message`](Self::message). Android only.
+    /// group conversation). Used with [`message`](Self::message). On iOS it
+    /// becomes the communication notification's group name (with
+    /// [`group_conversation`](Self::group_conversation)).
     #[must_use]
     pub fn conversation_title(mut self, title: impl Into<String>) -> Self {
         self.data.conversation_title.replace(title.into());
@@ -444,7 +456,7 @@ impl NotificationDataBuilder {
     }
 
     /// Mark the conversation as a group (multiple participants), which lets the
-    /// system show the conversation title. Android only.
+    /// system show the conversation title.
     #[must_use]
     pub const fn group_conversation(mut self) -> Self {
         self.data.group_conversation = true;
