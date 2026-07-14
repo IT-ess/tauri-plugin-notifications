@@ -1,4 +1,5 @@
 import Foundation
+import Intents
 import UserNotifications
 import os.log
 
@@ -7,7 +8,7 @@ import os.log
 /// camelCase field names).
 ///
 /// Only the fields an iOS Notification Service Extension can apply are
-/// consumed; unknown or Android-only fields (`messages`, `channelId`, `icon`,
+/// consumed; unknown or Android-only fields (`channelId`, `icon`,
 /// `inboxLines`, …) are legal in the JSON and ignored here. `id` is also
 /// ignored: an NSE cannot change the request identifier APNs assigned, so
 /// remote notifications surface in the plugin's `notificationClicked` event
@@ -30,11 +31,25 @@ struct SilentPushContent: Decodable {
   /// Attachments; URLs must be file URLs readable from the extension's
   /// sandbox (i.e. inside the shared App Group container).
   let attachments: [SilentPushAttachment]?
+  /// Chat messages — the Android `MessagingStyle` fields. On iOS the *last*
+  /// message turns the notification into a communication notification
+  /// (`INSendMessageIntent`): the sender's avatar replaces the app icon,
+  /// like Android's per-sender circular avatars. Requires the host app to
+  /// carry the `com.apple.developer.usernotifications.communication`
+  /// entitlement and declare `INSendMessageIntent` in `NSUserActivityTypes`.
+  let messages: [SilentPushMessage]?
+  /// Conversation title (room name); shown as the group name when
+  /// `groupConversation` is set.
+  let conversationTitle: String?
+  /// Marks the conversation as a group (multiple participants).
+  let groupConversation: Bool?
 
   /// Applies the decoded fields onto `content` (the mutable copy of the push's
   /// original content), leaving everything the handler omitted — most notably
-  /// the payload's fallback `alert` — untouched.
-  func apply(to content: UNMutableNotificationContent, log: OSLog) {
+  /// the payload's fallback `alert` — untouched. Returns the content to
+  /// deliver: `content` itself, or the communication-notification rewrite of
+  /// it when `messages` carries a sender.
+  func apply(to content: UNMutableNotificationContent, log: OSLog) -> UNNotificationContent {
     if let title = title {
       content.title = title
     }
@@ -82,7 +97,85 @@ struct SilentPushContent: Decodable {
         content.attachments = created
       }
     }
+
+    // Communication notification: iOS's counterpart of Android's
+    // MessagingStyle. Only the most recent message matters — iOS stacks
+    // earlier ones via `threadIdentifier` — and it needs a sender to render.
+    if #available(iOS 15.0, macOS 12.0, *),
+      let message = messages?.last,
+      let sender = message.sender
+    {
+      return communicationContent(from: content, message: message, sender: sender, log: log)
+    }
+    return content
   }
+
+  /// Rewrites `content` as a communication notification: donates an incoming
+  /// `INSendMessageIntent` for the sender and returns `content.updating(from:)`,
+  /// which makes the system draw the sender's avatar instead of the app icon.
+  /// Falls back to `content` unchanged if the rewrite fails (e.g. the host app
+  /// lacks the communication-notifications entitlement).
+  @available(iOS 15.0, macOS 12.0, *)
+  private func communicationContent(
+    from content: UNMutableNotificationContent,
+    message: SilentPushMessage,
+    sender: String,
+    log: OSLog
+  ) -> UNNotificationContent {
+    var avatar: INImage?
+    if let base64 = message.avatarBytes, let data = Data(base64Encoded: base64) {
+      avatar = INImage(imageData: data)
+    }
+    let senderKey = message.personKey ?? sender
+    let person = INPerson(
+      personHandle: INPersonHandle(value: senderKey, type: .unknown),
+      nameComponents: nil,
+      displayName: sender,
+      image: avatar,
+      contactIdentifier: nil,
+      customIdentifier: senderKey
+    )
+
+    let isGroup = groupConversation ?? false
+    let intent = INSendMessageIntent(
+      recipients: nil,
+      outgoingMessageType: .outgoingMessageText,
+      content: message.text ?? body,
+      speakableGroupName: isGroup
+        ? conversationTitle.map { INSpeakableString(spokenPhrase: $0) } : nil,
+      conversationIdentifier: group,
+      serviceName: nil,
+      sender: person,
+      attachments: nil
+    )
+
+    let interaction = INInteraction(intent: intent, response: nil)
+    interaction.direction = .incoming
+    interaction.donate(completion: nil)
+
+    do {
+      return try content.updating(from: intent)
+    } catch {
+      os_log(
+        "Failed to rewrite as communication notification (missing entitlement?): %{public}@",
+        log: log, type: .error, String(describing: error))
+      return content
+    }
+  }
+}
+
+/// One entry of `SilentPushContent.messages` — the serialized form of the Rust
+/// `NotificationMessage` model (shared with Android's `MessagingStyle` path).
+struct SilentPushMessage: Decodable {
+  /// Sender display name; without it the message cannot become a
+  /// communication notification.
+  let sender: String?
+  /// Stable sender key (e.g. a Matrix user id), used to merge senders.
+  let personKey: String?
+  /// Sender avatar as base64-encoded image bytes (PNG/JPEG).
+  let avatarBytes: String?
+  /// Message text; falls back to the notification `body`.
+  let text: String?
 }
 
 /// One entry of `SilentPushContent.attachments` — the serialized form of the
