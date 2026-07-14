@@ -3,7 +3,7 @@ package app.tauri.notification
 import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.os.Build
-import app.tauri.Logger
+import android.util.Log
 import app.tauri.plugin.JSObject
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -20,6 +20,18 @@ class TauriFirebaseMessagingService : FirebaseMessagingService() {
 
   override fun onMessageReceived(message: RemoteMessage) {
     super.onMessageReceived(message)
+
+    // Plain android.util.Log (not app.tauri.Logger) throughout this service: it
+    // must stay visible in a Firebase cold-started process where the Tauri
+    // runtime never initialized. `original != priority` exposes an FCM priority
+    // downgrade; `warm=false` means the process was started just for this push.
+    Log.i(
+      TAG,
+      "FCM message: id=${message.messageId} priority=${message.priority}" +
+        " (original=${message.originalPriority}) dataKeys=${message.data.keys}" +
+        " hasNotification=${message.notification != null}" +
+        " warm=${NotificationPlugin.instance != null}"
+    )
 
     // Build push message data from RemoteMessage
     val pushData = mutableMapOf<String, Any>()
@@ -95,21 +107,31 @@ class TauriFirebaseMessagingService : FirebaseMessagingService() {
    * after a cold start. Returns `true` if a handler consumed the message.
    */
   private fun dispatchToBackgroundHandler(message: RemoteMessage): Boolean {
-    val className = silentPushHandlerClassName() ?: return false
+    val className = silentPushHandlerClassName()
+    if (className == null) {
+      // A cold-started process has no other way to show the push, so a
+      // missing/unreadable meta-data entry must not fail silently.
+      Log.w(TAG, "no SILENT_PUSH_HANDLER meta-data resolved; silent push not handled in background")
+      return false
+    }
     return try {
       val handler = Class.forName(className)
         .getDeclaredConstructor()
         .newInstance() as? SilentPushHandler
       if (handler == null) {
-        Logger.error(Logger.tags(TAG), "$className does not implement SilentPushHandler", null)
+        Log.e(TAG, "$className does not implement SilentPushHandler")
         return false
       }
       // Matches what Tauri's path API resolves to on Android (activity.dataDir),
       // so the background fetch can open the same store the main app uses.
       val dataDir = applicationContext.dataDir.absolutePath
-      handler.onSilentPush(applicationContext, dataDir, message.data, message.messageId)
-    } catch (e: Exception) {
-      Logger.error(Logger.tags(TAG), "Silent push handler '$className' failed: ${e.message}", e)
+      val handled = handler.onSilentPush(applicationContext, dataDir, message.data, message.messageId)
+      Log.i(TAG, "silent push handler $className returned $handled")
+      handled
+    } catch (e: Throwable) {
+      // Throwable, not Exception: Class.forName/class-init can throw
+      // LinkageError, which would otherwise escape and kill the FCM thread.
+      Log.e(TAG, "silent push handler '$className' failed", e)
       false
     }
   }
@@ -128,7 +150,7 @@ class TauriFirebaseMessagingService : FirebaseMessagingService() {
       }
       info.metaData?.getString(SILENT_PUSH_HANDLER_META)
     } catch (e: Exception) {
-      Logger.error(Logger.tags(TAG), "Failed to read silent push handler meta-data: ${e.message}", e)
+      Log.e(TAG, "failed to read silent push handler meta-data", e)
       null
     }
   }
