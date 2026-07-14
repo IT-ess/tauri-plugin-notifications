@@ -154,9 +154,11 @@ open class TauriNotificationService: UNNotificationServiceExtension {
 
     let content = bestAttemptContent ?? UNMutableNotificationContent()
     if let decoded = decoded {
-      decoded.apply(to: content, log: Self.log)
+      // `apply` may return a rewritten copy (communication notification).
+      contentHandler(decoded.apply(to: content, log: Self.log))
+    } else {
+      contentHandler(content)
     }
-    contentHandler(content)
   }
 
   private func symbol<T>(_ name: String, as type: T.Type) -> T? {
