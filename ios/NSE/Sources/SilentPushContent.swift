@@ -41,8 +41,14 @@ struct SilentPushContent: Decodable {
   /// Conversation title (room name); shown as the group name when
   /// `groupConversation` is set.
   let conversationTitle: String?
-  /// Marks the conversation as a group (multiple participants).
+  /// Marks the conversation as a group (multiple participants): the
+  /// notification then brands as the room — `conversationTitle` as the group
+  /// name and `conversationAvatarBytes` as the icon — instead of the sender.
   let groupConversation: Bool?
+  /// Avatar of the group conversation (room) as base64-encoded image bytes;
+  /// with `groupConversation`, drawn as the notification icon instead of the
+  /// sender's avatar.
+  let conversationAvatarBytes: String?
 
   /// Applies the decoded fields onto `content` (the mutable copy of the push's
   /// original content), leaving everything the handler omitted — most notably
@@ -111,10 +117,12 @@ struct SilentPushContent: Decodable {
   }
 
   /// Rewrites `content` as a communication notification: donates an incoming
-  /// `INSendMessageIntent` for the sender and returns `content.updating(from:)`,
-  /// which makes the system draw the sender's avatar instead of the app icon.
-  /// Falls back to `content` unchanged if the rewrite fails (e.g. the host app
-  /// lacks the communication-notifications entitlement).
+  /// `INSendMessageIntent` for the sender and returns `content.updating(from:)`.
+  /// DMs draw the sender's avatar instead of the app icon; group conversations
+  /// brand as the room instead — `conversationTitle` becomes the displayed
+  /// group name and `conversationAvatarBytes` the icon. Falls back to `content`
+  /// unchanged if the rewrite fails (e.g. the host app lacks the
+  /// communication-notifications entitlement).
   @available(iOS 15.0, macOS 12.0, *)
   private func communicationContent(
     from content: UNMutableNotificationContent,
@@ -122,23 +130,54 @@ struct SilentPushContent: Decodable {
     sender: String,
     log: OSLog
   ) -> UNNotificationContent {
-    var avatar: INImage?
-    if let base64 = message.avatarBytes, let data = Data(base64Encoded: base64) {
-      avatar = INImage(imageData: data)
+    let isGroup = groupConversation ?? false
+
+    // Group conversations brand as the room: the room's avatar (or, without
+    // one, the system's monogram of the group name) is the icon, so the sender
+    // person deliberately carries no image there — a sender image would
+    // compete for the icon slot. DMs keep the sender's avatar.
+    var groupAvatar: INImage?
+    if isGroup, let base64 = conversationAvatarBytes, let data = Data(base64Encoded: base64) {
+      groupAvatar = INImage(imageData: data)
     }
+    var senderAvatar: INImage?
+    if !isGroup, let base64 = message.avatarBytes, let data = Data(base64Encoded: base64) {
+      senderAvatar = INImage(imageData: data)
+    }
+
     let senderKey = message.personKey ?? sender
     let person = INPerson(
       personHandle: INPersonHandle(value: senderKey, type: .unknown),
       nameComponents: nil,
       displayName: sender,
-      image: avatar,
+      image: senderAvatar,
       contactIdentifier: nil,
       customIdentifier: senderKey
     )
 
-    let isGroup = groupConversation ?? false
+    // The system only treats the intent as a group conversation — rendering
+    // `speakableGroupName` and its image — when it has *multiple* recipients;
+    // a lone `isMe` person doesn't qualify and the notification falls back to
+    // 1:1 styling. The room's member list isn't available here, so mirror
+    // Element X: the sender plus an `isMe` placeholder for the local user.
+    var recipients: [INPerson]?
+    if isGroup {
+      recipients = [
+        person,
+        INPerson(
+          personHandle: INPersonHandle(value: "me", type: .unknown),
+          nameComponents: nil,
+          displayName: nil,
+          image: nil,
+          contactIdentifier: nil,
+          customIdentifier: nil,
+          isMe: true
+        ),
+      ]
+    }
+
     let intent = INSendMessageIntent(
-      recipients: nil,
+      recipients: recipients,
       outgoingMessageType: .outgoingMessageText,
       content: message.text ?? body,
       speakableGroupName: isGroup
@@ -148,6 +187,13 @@ struct SilentPushContent: Decodable {
       sender: person,
       attachments: nil
     )
+    // `setImage(_:forParameterNamed:)` doesn't exist on macOS; there the group
+    // notification keeps the monogram the system derives from the group name.
+    #if !os(macOS)
+      if let groupAvatar = groupAvatar {
+        intent.setImage(groupAvatar, forParameterNamed: \.speakableGroupName)
+      }
+    #endif
 
     let interaction = INInteraction(intent: intent, response: nil)
     interaction.direction = .incoming

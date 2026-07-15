@@ -63,6 +63,10 @@ class Notification {
   var messages: List<NotificationMessage>? = null
   var conversationTitle: String? = null
   var groupConversation: Boolean = false
+  // Group conversation (room) avatar as base64 image bytes. Only consumed by
+  // the iOS NSE today (group-notification icon); declared so Jackson accepts
+  // the key when a cross-platform payload carries it.
+  var conversationAvatarBytes: String? = null
   var selfName: String? = null
   // When true (default), posting a MessagingStyle notification whose `id` is
   // already showing appends the new messages to that conversation instead of

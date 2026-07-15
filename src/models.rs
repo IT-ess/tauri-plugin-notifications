@@ -233,6 +233,10 @@ pub struct NotificationData {
     pub(crate) conversation_title: Option<String>,
     #[serde(default)]
     pub(crate) group_conversation: bool,
+    /// Avatar of the group conversation (room) as base64-encoded image bytes.
+    /// iOS silent-push NSE path only: with `group_conversation`, it is drawn
+    /// as the notification icon instead of the sender's avatar.
+    pub(crate) conversation_avatar_bytes: Option<String>,
     pub(crate) self_name: Option<String>,
     /// When true (default), posting a `MessagingStyle` notification whose `id` is
     /// already showing appends the new messages to that conversation instead of
@@ -339,6 +343,7 @@ impl Default for NotificationData {
             messages: Vec::new(),
             conversation_title: None,
             group_conversation: false,
+            conversation_avatar_bytes: None,
             self_name: None,
             append_messages: true,
             deep_link: None,
@@ -460,6 +465,17 @@ impl NotificationDataBuilder {
     #[must_use]
     pub const fn group_conversation(mut self) -> Self {
         self.data.group_conversation = true;
+        self
+    }
+
+    /// Set the group conversation's (room's) avatar as base64-encoded image
+    /// bytes (PNG/JPEG). iOS silent-push NSE path only: with
+    /// [`group_conversation`](Self::group_conversation) it becomes the
+    /// communication notification's icon in place of the sender's avatar,
+    /// branding the notification as the room.
+    #[must_use]
+    pub fn conversation_avatar_bytes(mut self, base64: impl Into<String>) -> Self {
+        self.data.conversation_avatar_bytes.replace(base64.into());
         self
     }
 
