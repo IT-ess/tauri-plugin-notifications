@@ -174,6 +174,15 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
       }
       return manager.schedule(notification)
     }
+
+    /**
+     * Drop every stored MessagingStyle conversation history. For background
+     * callers (e.g. a [SilentPushHandler]) that clear the notification shade:
+     * without this, the next message would resurrect the cleared thread.
+     */
+    fun clearAllConversations(context: Context) {
+      NotificationStorage(context, ObjectMapper()).clearAllConversations()
+    }
   }
 
   override fun load(webView: WebView) {
@@ -340,8 +349,11 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   fun removeActive(invoke: Invoke) {
     val args = invoke.parseArgs(RemoveActiveArgs::class.java)
 
+    // Removing a notification from the shade also ends its accumulated chat
+    // thread; otherwise the next message would resurrect the old history.
     if (args.notifications.isEmpty()) {
       notificationManager.cancelAll()
+      notificationStorage.clearAllConversations()
       invoke.resolve()
     } else {
       for (notification in args.notifications) {
@@ -350,6 +362,7 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
         } else {
           notificationManager.cancel(notification.tag, notification.id)
         }
+        notificationStorage.clearConversation(notification.id)
       }
       invoke.resolve()
     }

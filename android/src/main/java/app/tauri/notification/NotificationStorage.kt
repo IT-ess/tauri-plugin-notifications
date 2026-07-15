@@ -3,7 +3,6 @@ package app.tauri.notification
 import android.content.Context
 import android.content.SharedPreferences
 import app.tauri.Logger
-import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 
 private const val STORAGE_TAG = "NotificationStorage"
@@ -93,8 +92,14 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
   /** Load the accumulated chat messages for a conversation (notification id). */
   fun loadConversation(id: Int): MutableList<NotificationMessage> {
     val json = getStorage(MESSAGING_STORE_ID).getString("conv_$id", null) ?: return mutableListOf()
+    // The list type is built programmatically instead of with an anonymous
+    // `TypeReference<…>() {}`: R8 vertically merges TypeReference into its sole
+    // subclass in release builds, which breaks the getGenericSuperclass() type
+    // discovery and made this load throw (and return empty) on every call.
+    val listType =
+      jsonMapper.typeFactory.constructCollectionType(ArrayList::class.java, NotificationMessage::class.java)
     return try {
-      jsonMapper.readValue(json, object : TypeReference<MutableList<NotificationMessage>>() {})
+      jsonMapper.readValue(json, listType)
     } catch (e: Exception) {
       Logger.error(Logger.tags(STORAGE_TAG), "Failed to parse conversation $id: ${e.message}", e)
       mutableListOf()
@@ -115,6 +120,14 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
   /** Drop a conversation's history (e.g. when its notification is cancelled). */
   fun clearConversation(id: Int) {
     getStorage(MESSAGING_STORE_ID).edit().remove("conv_$id").apply()
+  }
+
+  /** Drop every conversation's history (e.g. when all notifications are cleared). */
+  fun clearAllConversations() {
+    val prefs = getStorage(MESSAGING_STORE_ID)
+    val editor = prefs.edit()
+    prefs.all.keys.filter { it.startsWith("conv_") }.forEach { editor.remove(it) }
+    editor.apply()
   }
 
   /** Store a sender's avatar once (by person key), referenced by their messages. */

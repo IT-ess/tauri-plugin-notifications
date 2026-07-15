@@ -572,10 +572,14 @@ class NotificationDismissReceiver : BroadcastReceiver() {
       Logger.error(Logger.tags(TAG), "Invalid notification dismiss operation", null)
       return
     }
+    // The notification left the shade (user swipe, clear-all, or auto-cancel
+    // tap), so its accumulated chat history must not resurface on the next
+    // message: the conversation restarts from the new message.
+    val notificationStorage = NotificationStorage(context, ObjectMapper())
+    notificationStorage.clearConversation(intExtra)
     val isRemovable =
       intent.getBooleanExtra(NOTIFICATION_IS_REMOVABLE_KEY, true)
     if (isRemovable) {
-      val notificationStorage = NotificationStorage(context, ObjectMapper())
       notificationStorage.deleteNotification(intExtra.toString())
     }
   }
