@@ -198,6 +198,17 @@ impl<R: Runtime> NotificationsBuilder<R> {
         self
     }
 
+    /// Set the group conversation's (room's) avatar as base64-encoded image
+    /// bytes (PNG/JPEG). With [`group_conversation`](Self::group_conversation)
+    /// it becomes the `MessagingStyle` conversation icon (largeIcon) in place
+    /// of the sender's avatar, branding the notification as the room. Android
+    /// only.
+    #[must_use]
+    pub fn conversation_avatar_bytes(mut self, base64: impl Into<String>) -> Self {
+        self.data.conversation_avatar_bytes.replace(base64.into());
+        self
+    }
+
     /// Display name of the local user in a `MessagingStyle` conversation
     /// (defaults to "Me"). Android only.
     #[must_use]
