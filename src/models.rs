@@ -234,8 +234,9 @@ pub struct NotificationData {
     #[serde(default)]
     pub(crate) group_conversation: bool,
     /// Avatar of the group conversation (room) as base64-encoded image bytes.
-    /// iOS silent-push NSE path only: with `group_conversation`, it is drawn
-    /// as the notification icon instead of the sender's avatar.
+    /// With `group_conversation`, it is drawn as the notification icon instead
+    /// of the sender's avatar: communication-notification icon on iOS (NSE),
+    /// `MessagingStyle` conversation icon (largeIcon) on Android.
     pub(crate) conversation_avatar_bytes: Option<String>,
     pub(crate) self_name: Option<String>,
     /// When true (default), posting a `MessagingStyle` notification whose `id` is
@@ -469,10 +470,12 @@ impl NotificationDataBuilder {
     }
 
     /// Set the group conversation's (room's) avatar as base64-encoded image
-    /// bytes (PNG/JPEG). iOS silent-push NSE path only: with
+    /// bytes (PNG/JPEG). With
     /// [`group_conversation`](Self::group_conversation) it becomes the
-    /// communication notification's icon in place of the sender's avatar,
-    /// branding the notification as the room.
+    /// notification's icon in place of the sender's avatar, branding the
+    /// notification as the room: the communication notification's icon on iOS
+    /// (silent-push NSE path), the `MessagingStyle` conversation icon
+    /// (largeIcon) on Android.
     #[must_use]
     pub fn conversation_avatar_bytes(mut self, base64: impl Into<String>) -> Self {
         self.data.conversation_avatar_bytes.replace(base64.into());

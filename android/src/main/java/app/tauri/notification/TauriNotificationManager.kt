@@ -22,6 +22,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import app.tauri.Logger
 import app.tauri.plugin.JSObject
@@ -240,8 +242,11 @@ class TauriNotificationManager(
   }
 
   // Build a chat-style notification: each message shows its sender and (circular)
-  // avatar, with an optional conversation title for group rooms. The most recent
-  // sender's avatar is also used as the collapsed-view large icon.
+  // avatar, with an optional conversation title for group rooms. A long-lived
+  // conversation shortcut is published so Android 11+ shows the conversation's
+  // avatar — the room's for group conversations, else the latest sender's — as
+  // the main icon, badged with the app's small icon. The same avatar is also
+  // set as largeIcon for pre-11 devices (and rate-limited shortcut pushes).
   //
   // When `appendMessages` is set, the new messages are appended to the
   // conversation persisted for this notification id (capped at MAX_MESSAGES), so
@@ -288,6 +293,7 @@ class TauriNotificationManager(
       .setGroupConversation(notification.groupConversation)
 
     var lastAvatar: Bitmap? = null
+    var lastPerson: Person? = null
     for (message in capped) {
       val avatar = Notification.decodeBase64Bitmap(message.avatarBytes ?: storage.loadAvatar(message.personKey))
       if (avatar != null) lastAvatar = avatar
@@ -298,12 +304,49 @@ class TauriNotificationManager(
           avatar?.let { setIcon(IconCompat.createWithBitmap(it)) }
         }
         .build()
+      lastPerson = person
       val timestamp = if (message.timestamp != 0L) message.timestamp else System.currentTimeMillis()
       style.addMessage(message.text, timestamp, person)
     }
 
+    // Group conversations brand as the room: the room avatar becomes the
+    // conversation icon (largeIcon), while per-message sender avatars remain
+    // in the expanded rows. Persisted per notification id so a stacked re-post
+    // whose payload lacks the avatar doesn't flip the icon back to a sender.
+    val conversationAvatar = if (notification.groupConversation) {
+      val bytes = notification.conversationAvatarBytes?.takeIf { it.isNotEmpty() }
+      if (bytes != null) storage.saveConversationAvatar(notification.id, bytes)
+      Notification.decodeBase64Bitmap(bytes ?: storage.loadConversationAvatar(notification.id))
+    } else null
+
+    // Android 11+ only renders the "conversation" layout — avatar as the main
+    // icon with the app's small icon badged on it — when the notification is
+    // tied to a published long-lived dynamic shortcut. Without it the system
+    // falls back to the standard template (app icon). The id is stable per
+    // notification id (= per room), so each conversation reuses one shortcut
+    // and its icon refreshes on every post.
+    val shortcutId = "tauri_conv_${notification.id}"
+    val shortcutIcon = (conversationAvatar ?: lastAvatar)?.let { IconCompat.createWithBitmap(it) }
+    val shortLabel = (notification.conversationTitle ?: notification.title)
+      ?.takeIf { it.isNotBlank() } ?: "Conversation"
+    val shortcut = ShortcutInfoCompat.Builder(context, shortcutId)
+      .setShortLabel(shortLabel)
+      .setLongLived(true)
+      .setIntent(buildIntent(notification, DEFAULT_PRESS_ACTION))
+      .apply {
+        shortcutIcon?.let { setIcon(it) }
+        lastPerson?.let { setPerson(it) }
+      }
+      .build()
+    // Handles rate limiting and per-activity count eviction itself. The
+    // shortcut id is referenced regardless: it is long-lived, so any earlier
+    // push keeps it valid, and a missing shortcut just means today's fallback
+    // rendering for that one post.
+    ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
+    mBuilder.setShortcutId(shortcutId)
+
     mBuilder.setStyle(style)
-    lastAvatar?.let { mBuilder.setLargeIcon(it) }
+    (conversationAvatar ?: lastAvatar)?.let { mBuilder.setLargeIcon(it) }
   }
 
   // Create intents for open/dismiss actions

@@ -119,7 +119,7 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
 
   /** Drop a conversation's history (e.g. when its notification is cancelled). */
   fun clearConversation(id: Int) {
-    getStorage(MESSAGING_STORE_ID).edit().remove("conv_$id").apply()
+    getStorage(MESSAGING_STORE_ID).edit().remove("conv_$id").remove("conv_avatar_$id").apply()
   }
 
   /** Drop every conversation's history (e.g. when all notifications are cleared). */
@@ -129,6 +129,14 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
     prefs.all.keys.filter { it.startsWith("conv_") }.forEach { editor.remove(it) }
     editor.apply()
   }
+
+  /** Store the group conversation's (room's) avatar for a notification id. */
+  fun saveConversationAvatar(id: Int, base64: String) {
+    getStorage(MESSAGING_STORE_ID).edit().putString("conv_avatar_$id", base64).apply()
+  }
+
+  fun loadConversationAvatar(id: Int): String? =
+    getStorage(MESSAGING_STORE_ID).getString("conv_avatar_$id", null)
 
   /** Store a sender's avatar once (by person key), referenced by their messages. */
   fun saveAvatar(personKey: String, base64: String) {
