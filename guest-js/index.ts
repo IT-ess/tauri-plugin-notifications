@@ -147,6 +147,12 @@ interface Options {
    */
   groupConversation?: boolean;
   /**
+   * Avatar of the group conversation (room) as base64-encoded image bytes
+   * (PNG/JPEG). With `groupConversation`, drawn as the notification icon
+   * instead of the sender's avatar. Android only.
+   */
+  conversationAvatarBytes?: string;
+  /**
    * Display name of the local user in a `messages` conversation (defaults to
    * "Me"). Android only.
    */

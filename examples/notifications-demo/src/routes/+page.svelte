@@ -191,8 +191,9 @@
 
   /**
    * Simulates a silent (data-only) push being delivered to the app, exercising
-   * the Rust-only `on_silent_push` handler. The Rust side "fetches" the event
-   * and shows the notification itself — the Matrix client pattern. Android-only.
+   * the same Rust handler (`silent_push_handler!`) a real FCM data message
+   * reaches. The Rust side "fetches" the event and returns the notification —
+   * the Matrix client pattern. Android-only.
    */
   async function handleSimulateSilentPush() {
     try {
@@ -847,9 +848,10 @@
         <p style="margin: 0.5rem 0;">
           A data-only push carries just an id (e.g. a Matrix
           <code>event_id</code>). The Rust handler registered via
-          <code>on_silent_push</code> fetches the content and raises the
-          notification itself — there is no JavaScript API for this. The button
-          below feeds a fake silent push through that exact handler.
+          <code>silent_push_handler!</code> fetches the content and returns the
+          notification — in every app state, including after the app was killed.
+          There is no JavaScript API for this. The button below feeds a fake
+          silent push through that exact handler.
         </p>
         <button onclick={handleSimulateSilentPush}>
           Simulate Silent Push (Matrix)
