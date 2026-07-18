@@ -3,10 +3,10 @@ import UserNotifications
 import os.log
 
 /// Base class for the host app's Notification Service Extension, mirroring the
-/// Android killed-state `SilentPushHandler` path: the push payload's custom
-/// keys are handed to Rust code in the host app's own static library, which
-/// fetches/decodes the real content (e.g. a Matrix event) and returns the
-/// notification to display.
+/// Android killed-state path (the plugin's messaging service + JNI): the push
+/// payload's custom keys are handed to Rust code in the host app's own static
+/// library, which fetches/decodes the real content (e.g. a Matrix event) and
+/// returns the notification to display.
 ///
 /// Usage — in the app's NSE target (which links the same `libapp.a` staticlib
 /// as the app, plus this module):
@@ -17,7 +17,7 @@ import os.log
 /// final class NotificationService: TauriNotificationService {}
 /// ```
 ///
-/// The Rust side is registered with the plugin's `ios_silent_push_handler!`
+/// The Rust side is registered with the plugin's `silent_push_handler!`
 /// macro. Because `libapp.a` is a static archive, the NSE target must force
 /// the symbols in with
 /// `OTHER_LDFLAGS: -Wl,-u,_tauri_notifications_process_silent_push -Wl,-u,_tauri_notifications_silent_push_free`
@@ -41,10 +41,11 @@ open class TauriNotificationService: UNNotificationServiceExtension {
   ) -> UnsafeMutablePointer<CChar>?
   private typealias FreeFn = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
 
+  // Both guarded by `deliveryLock`; `deliver` atomically takes `contentHandler`
+  // (swapping in nil), which is what makes delivery happen exactly once.
   private var contentHandler: ((UNNotificationContent) -> Void)?
   private var bestAttemptContent: UNMutableNotificationContent?
   private let deliveryLock = NSLock()
-  private var delivered = false
 
   /// Info.plist key holding the App Group identifier. Override to rename.
   open var appGroupInfoPlistKey: String { "TauriNotificationsAppGroup" }
@@ -80,9 +81,10 @@ open class TauriNotificationService: UNNotificationServiceExtension {
     _ request: UNNotificationRequest,
     withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void
   ) {
+    deliveryLock.lock()
     self.contentHandler = contentHandler
     self.bestAttemptContent = request.content.mutableCopy() as? UNMutableNotificationContent
-    delivered = false
+    deliveryLock.unlock()
 
     let userInfo = request.content.userInfo
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -101,7 +103,7 @@ open class TauriNotificationService: UNNotificationServiceExtension {
       let free = symbol("tauri_notifications_silent_push_free", as: FreeFn.self)
     else {
       os_log(
-        "Rust silent-push symbols not found. Did you invoke ios_silent_push_handler! in your src-tauri crate, link libapp.a into the extension, and add the -Wl,-u,_tauri_notifications_process_silent_push linker flag?",
+        "Rust silent-push symbols not found. Did you invoke silent_push_handler! in your src-tauri crate, link libapp.a into the extension, and add the -Wl,-u,_tauri_notifications_process_silent_push linker flag?",
         log: Self.log, type: .fault)
       deliver(nil)
       return
@@ -133,7 +135,16 @@ open class TauriNotificationService: UNNotificationServiceExtension {
     }
 
     do {
-      let content = try JSONDecoder().decode(SilentPushContent.self, from: resultData)
+      var content = try JSONDecoder().decode(SilentPushContent.self, from: resultData)
+      // `extra` values can be any JSON, so they come from JSONSerialization
+      // rather than Codable: its NSNumber keeps the exact text of large
+      // integers (Matrix timestamps, snowflake ids), where a Double
+      // round-trip corrupts anything ≥ 2^53.
+      if let object = try JSONSerialization.jsonObject(with: resultData) as? [String: Any],
+        let extra = object["extra"] as? [String: Any]
+      {
+        content.extraStrings = extra.compactMapValues(Self.stringify)
+      }
       deliver(content)
     } catch {
       os_log(
@@ -147,17 +158,17 @@ open class TauriNotificationService: UNNotificationServiceExtension {
   /// when present. `nil` delivers the original (fallback) content unchanged.
   private func deliver(_ decoded: SilentPushContent?) {
     deliveryLock.lock()
-    let alreadyDelivered = delivered
-    delivered = true
-    deliveryLock.unlock()
-    guard !alreadyDelivered, let contentHandler = contentHandler else { return }
-
+    let handler = contentHandler
+    contentHandler = nil
     let content = bestAttemptContent ?? UNMutableNotificationContent()
+    deliveryLock.unlock()
+    guard let handler = handler else { return }
+
     if let decoded = decoded {
       // `apply` may return a rewritten copy (communication notification).
-      contentHandler(decoded.apply(to: content, log: Self.log))
+      handler(decoded.apply(to: content, log: Self.log))
     } else {
-      contentHandler(content)
+      handler(content)
     }
   }
 
@@ -174,28 +185,42 @@ open class TauriNotificationService: UNNotificationServiceExtension {
   }
 
   /// The push payload's top-level custom keys (everything except `aps`),
-  /// stringified — the same shape the Android `SilentPushHandler` receives.
+  /// stringified — the same shape the Android silent-push handler receives.
   static func flattenCustomKeys(_ userInfo: [AnyHashable: Any]) -> [String: String] {
     var data: [String: String] = [:]
     for (key, value) in userInfo {
       guard let key = key as? String, key != "aps" else { continue }
-      if let string = value as? String {
+      if let string = stringify(value) {
         data[key] = string
-      } else if let number = value as? NSNumber {
-        if CFGetTypeID(number) == CFBooleanGetTypeID() {
-          data[key] = number.boolValue ? "true" : "false"
-        } else {
-          data[key] = number.stringValue
-        }
-      } else if JSONSerialization.isValidJSONObject(value),
-        let json = try? JSONSerialization.data(withJSONObject: value),
-        let string = String(data: json, encoding: .utf8)
-      {
-        data[key] = string
-      } else {
-        data[key] = String(describing: value)
       }
     }
     return data
+  }
+
+  /// Canonical value→string rules, shared by the payload's custom keys and the
+  /// handler's `extra` values: strings pass through, booleans render as
+  /// true/false, numbers via `NSNumber.stringValue` (exact even for integers
+  /// beyond 2^53), JSON objects/arrays as their JSON text; JSON null is
+  /// skipped (`nil`).
+  static func stringify(_ value: Any) -> String? {
+    if let string = value as? String {
+      return string
+    }
+    if value is NSNull {
+      return nil
+    }
+    if let number = value as? NSNumber {
+      if CFGetTypeID(number) == CFBooleanGetTypeID() {
+        return number.boolValue ? "true" : "false"
+      }
+      return number.stringValue
+    }
+    if JSONSerialization.isValidJSONObject(value),
+      let json = try? JSONSerialization.data(withJSONObject: value),
+      let string = String(data: json, encoding: .utf8)
+    {
+      return string
+    }
+    return String(describing: value)
   }
 }

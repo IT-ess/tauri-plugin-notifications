@@ -15,11 +15,11 @@ import app.tauri.annotation.Permission
 import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.Logger
-import app.tauri.plugin.Channel
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.firebase.messaging.FirebaseMessaging
 
@@ -66,11 +66,6 @@ class SetClickListenerActiveArgs {
 }
 
 @InvokeArg
-class SilentPushHandlerArgs {
-  lateinit var handler: Channel
-}
-
-@InvokeArg
 class ActiveNotification {
   var id: Int = 0
   var tag: String? = null
@@ -109,13 +104,15 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   // intent and drain in load() instead.
   private var pendingIntent: Intent? = null
 
-  // Rust-only handler for silent (data-only) push messages. Set via the
-  // `registerSilentPushHandler` command, which the plugin's Rust layer calls;
-  // never exposed to the webview.
-  private var silentPushChannel: Channel? = null
-
   companion object {
     var instance: NotificationPlugin? = null
+
+    // Shared mapper for background entry points (no plugin instance). Jackson
+    // mappers are heavyweight to build and thread-safe after configuration.
+    // Unknown properties are tolerated so a NotificationData field added on the
+    // Rust side never turns into a runtime parse failure on the silent-push path.
+    internal val mapper: ObjectMapper = ObjectMapper()
+      .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
     fun triggerNotification(notification: Notification, source: String = "local") {
       val data = JSObject()
@@ -149,8 +146,9 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
     }
 
     /**
-     * Post a notification from a background context (e.g. a [SilentPushHandler]
-     * running after a cold start), without a live plugin instance or Activity.
+     * Post a notification from a background context (e.g. the silent-push path
+     * in [TauriFirebaseMessagingService] after a cold start), without a live
+     * plugin instance or Activity.
      *
      * Builds a standalone [TauriNotificationManager] bound to `context`, ensures
      * the default channel exists, and shows the notification immediately using
@@ -158,15 +156,16 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
      * the app is killed — clicks open the app via its launcher intent.
      */
     fun postBackgroundNotification(context: Context, notification: Notification): Int {
-      val storage = NotificationStorage(context, ObjectMapper())
+      val storage = NotificationStorage(context, mapper)
       val manager = TauriNotificationManager(storage, null, context, null)
       manager.createNotificationChannel()
       // The warm path sets `sourceJson` from the raw invoke args so a tap can
       // surface the notification's `extra` payload (see `onIntent` →
       // `extractLocalNotificationData`). Background callers have no invoke, so
       // synthesize a minimal `sourceJson` carrying just `extra` — enough to
-      // round-trip the payload (e.g. a Matrix room_id/event_id) to JS on click,
-      // without bloating the click PendingIntent with messages/avatar bytes.
+      // round-trip the payload (e.g. a Matrix room_id/event_id) to JS on click.
+      // (Intent size is bounded either way: `buildIntent` strips the heavy
+      // conversation fields via `slimSourceJson` before any PendingIntent.)
       if (notification.sourceJson == null) {
         notification.extra?.let { extra ->
           notification.sourceJson = JSObject().apply { put("extra", extra) }.toString()
@@ -177,11 +176,11 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
 
     /**
      * Drop every stored MessagingStyle conversation history. For background
-     * callers (e.g. a [SilentPushHandler]) that clear the notification shade:
-     * without this, the next message would resurrect the cleared thread.
+     * callers that clear the notification shade: without this, the next
+     * message would resurrect the cleared thread.
      */
     fun clearAllConversations(context: Context) {
-      NotificationStorage(context, ObjectMapper()).clearAllConversations()
+      NotificationStorage(context, mapper).clearAllConversations()
     }
   }
 
@@ -598,42 +597,4 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
     invoke.resolve()
   }
 
-  // Registers the Rust-side channel that receives silent (data-only) push
-  // messages. Intentionally NOT added to `build.rs` COMMANDS: it carries an IPC
-  // channel created in Rust and is only ever invoked from the plugin's Rust
-  // layer (`Notifications::on_silent_push`), never from the webview.
-  @Command
-  fun registerSilentPushHandler(invoke: Invoke) {
-    val args = invoke.parseArgs(SilentPushHandlerArgs::class.java)
-    silentPushChannel = args.handler
-    invoke.resolve()
-  }
-
-  // Called by TauriFirebaseMessagingService for a data-only (silent) push.
-  // Forwards the payload to the registered Rust handler and reports whether one
-  // consumed it. No-op (returns false) when no handler is registered — e.g. the
-  // app process was started solely by Firebase and the Tauri runtime is not up.
-  fun dispatchSilentPush(pushData: Map<String, Any>): Boolean {
-    if (!BuildConfig.ENABLE_PUSH_NOTIFICATIONS) return false
-
-    val channel = silentPushChannel ?: return false
-
-    val payload = JSObject()
-    val dataObj = JSObject()
-    (pushData["data"] as? Map<*, *>)?.forEach { (k, v) ->
-      if (k is String) dataObj.put(k, v?.toString() ?: "")
-    }
-    payload.put("data", dataObj)
-    (pushData["messageId"] as? String)?.let { payload.put("messageId", it) }
-    (pushData["from"] as? String)?.let { payload.put("from", it) }
-    (pushData["sentTime"] as? Long)?.let { payload.put("sentTime", it) }
-
-    return try {
-      channel.send(payload)
-      true
-    } catch (e: Exception) {
-      Logger.error(Logger.tags(TAG), "Failed to dispatch silent push: ${e.message}", e)
-      false
-    }
-  }
 }

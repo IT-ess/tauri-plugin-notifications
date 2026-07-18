@@ -4,7 +4,7 @@ import XCTest
 @testable import TauriPluginNotificationsNSE
 
 // Rust-side stand-ins: in a real app the host's staticlib exports these C
-// symbols via `ios_silent_push_handler!`. Here the test bundle exports the
+// symbols via `silent_push_handler!`. Here the test bundle exports the
 // same symbols, so `TauriNotificationService`'s dlsym lookup resolves against
 // them and the whole didReceive flow can run without a device or APNs.
 
@@ -84,7 +84,9 @@ final class TauriNotificationServiceTests: XCTestCase {
         "extra": {
           "deepLink": "matrix:roomid/abc:matrix.org/e/xyz",
           "unreadCount": 2,
-          "encrypted": true
+          "encrypted": true,
+          "originServerTs": 1721270000000000123,
+          "nested": {"a": 1}
         },
         "channelId": "android-only-ignored"
       }
@@ -112,6 +114,10 @@ final class TauriNotificationServiceTests: XCTestCase {
     XCTAssertEqual(delivered.userInfo["deepLink"] as? String, "matrix:roomid/abc:matrix.org/e/xyz")
     XCTAssertEqual(delivered.userInfo["unreadCount"] as? String, "2")
     XCTAssertEqual(delivered.userInfo["encrypted"] as? String, "true")
+    // Large integers must round-trip exactly (a Double path would render
+    // "1.72127e+18" and lose precision beyond 2^53).
+    XCTAssertEqual(delivered.userInfo["originServerTs"] as? String, "1721270000000000123")
+    XCTAssertEqual(delivered.userInfo["nested"] as? String, #"{"a":1}"#)
     XCTAssertEqual(delivered.userInfo["room_id"] as? String, "!abc:matrix.org")
     XCTAssertEqual(delivered.userInfo["event_id"] as? String, "$xyz")
   }

@@ -32,6 +32,7 @@ import {
   onNotificationReceived,
   onAction,
   onNotificationClicked,
+  type Options,
 } from "./index";
 
 describe("Schedule", () => {
@@ -553,7 +554,9 @@ describe("Notification Functions", () => {
     it("should send notification with all optional fields", async () => {
       mockInvoke.mockResolvedValue(undefined);
 
-      const options = {
+      // Typed as Options so a field the interface drops fails compilation —
+      // the JS surface must stay field-for-field with `NotificationData`.
+      const options: Options = {
         title: "Full notification",
         body: "Body text",
         largeBody: "Large body",
@@ -573,6 +576,21 @@ describe("Notification Functions", () => {
         silent: true,
         visibility: Visibility.Private,
         number: 5,
+        messages: [
+          {
+            sender: "Alice",
+            personKey: "@alice:matrix.org",
+            avatarBytes: "aGk=",
+            text: "Hey!",
+            timestamp: 1721270000000,
+          },
+        ],
+        conversationTitle: "Rust enjoyers",
+        groupConversation: true,
+        conversationAvatarBytes: "aGk=",
+        selfName: "Me",
+        appendMessages: true,
+        deepLink: "matrix:roomid/abc:matrix.org/e/xyz",
       };
 
       await sendNotification(options);

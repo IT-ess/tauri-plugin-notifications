@@ -122,12 +122,11 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
     getStorage(MESSAGING_STORE_ID).edit().remove("conv_$id").remove("conv_avatar_$id").apply()
   }
 
-  /** Drop every conversation's history (e.g. when all notifications are cleared). */
+  /** Drop every conversation's history and all stored avatars. */
   fun clearAllConversations() {
-    val prefs = getStorage(MESSAGING_STORE_ID)
-    val editor = prefs.edit()
-    prefs.all.keys.filter { it.startsWith("conv_") }.forEach { editor.remove(it) }
-    editor.apply()
+    // The messaging store only holds conv_*/conv_avatar_*/avatar_* keys, so a
+    // full clear is both simpler and the only path that frees sender avatars.
+    getStorage(MESSAGING_STORE_ID).edit().clear().apply()
   }
 
   /** Store the group conversation's (room's) avatar for a notification id. */

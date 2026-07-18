@@ -2,8 +2,10 @@
 
 Demo app for `tauri-plugin-notifications` (Tauri + SvelteKit). It exercises every
 plugin feature; the notable one documented here is **silent push handling on
-Android and iOS**, including delivery while the app is killed (Android: FCM
-service + JNI; iOS: Notification Service Extension).
+Android and iOS**, including delivery while the app is killed — one Rust handler
+(`src-tauri/src/push_handler.rs`, registered with `silent_push_handler!`) serves
+both platforms (Android: the plugin's FCM service; iOS: Notification Service
+Extension).
 
 ## Run (desktop)
 
@@ -19,37 +21,28 @@ nothing and hands the app just the data payload (e.g. a Matrix `room_id` /
 `event_id`). The app is expected to fetch the real content and raise the
 notification itself. This demo shows both delivery paths.
 
-### Warm path — `on_silent_push` (app alive)
+### One handler, every app state
 
-Registered in `src-tauri/src/lib.rs` via `app.notifications().on_silent_push(...)`.
-It only fires while the Tauri runtime is up. The **"Simulate Silent Push (Matrix)"**
-button in the UI feeds a fake payload through this exact handler, which fetches
-(simulated) content and shows a notification. No Firebase backend needed.
+The plugin's FCM service handles data-only messages itself, in every app state:
+it loads the app's native library (named by the
+`app.tauri.notification.SILENT_PUSH_LIB` meta-data in `AndroidManifest.xml`,
+which does **not** start Tauri), calls the Rust handler registered with
+`silent_push_handler!`, and posts the returned notification. The demo pieces:
 
-### Killed-state path — Kotlin `SilentPushHandler` + JNI (app killed)
-
-When the OS has killed the app, Firebase still cold-starts the process and runs the
-plugin's messaging service — but without the Tauri runtime, so `on_silent_push`
-can't fire. The demo handles this with:
-
-- `gen/android/app/src/main/java/com/test/app/DemoSilentPushHandler.kt` — implements
-  the plugin's `SilentPushHandler`, declared on the plugin's FCM service via
-  `<meta-data>` in `AndroidManifest.xml`. Runs in every state, killed included.
-- `SilentPushBridge.kt` — loads the app's existing `.so` (which does **not** start
-  Tauri) and calls a custom JNI entry.
-- `src-tauri/src/android_push.rs` — that JNI entry; runs the (simulated) fetch on a
+- `src-tauri/src/push_handler.rs` — the handler; runs the (simulated) fetch on a
   short Tokio runtime and returns the notification content. This is the seam where
-  matrix-rust-sdk's `NotificationClient` would go. The handler also receives the app
-  **data directory** path (the same location Tauri's path API resolves to) and passes
-  it through, so the fetch can open the same on-disk store the main app uses.
-  It returns a chat-style payload (`conversationTitle`, `selfName`, and a `messages`
-  array) including the sender **avatar as base64 bytes** — standing in for the bytes
-  matrix-rust-sdk would return after downloading the `mxc://` avatar.
-- The handler copies those fields onto the `Notification` and posts it; the plugin
-  renders an Android **`MessagingStyle`** notification — circular avatar, sender
-  name, room title, and an expandable long message — and decodes the base64 avatar.
-- The handler then posts via `NotificationPlugin.postBackgroundNotification(...)`,
-  reusing the plugin's channel/styling.
+  matrix-rust-sdk's `NotificationClient` would go. It receives the app
+  **data directory** path (the same location Tauri's path API resolves to), so the
+  fetch can open the same on-disk store the main app uses. It returns a chat-style
+  payload (`conversation_title`, `self_name`, and `messages`) including the sender
+  **avatar as base64 bytes** — standing in for the bytes matrix-rust-sdk would
+  return after downloading the `mxc://` avatar.
+- The plugin renders an Android **`MessagingStyle`** notification — circular
+  avatar, sender name, room title, and an expandable long message — via the same
+  channel/styling as foreground notifications.
+- The **"Simulate Silent Push (Matrix)"** button in the UI feeds a fake payload
+  through this exact handler and shows the result — no Firebase backend needed
+  (warm only; for killed-state delivery see below).
 - The notification **id is keyed by the room** (`notification_id_for(&room_id)`) and
   `appendMessages` is on, so multiple events in the same room **stack** into one
   conversation notification — the plugin appends each new message to the one already
@@ -67,9 +60,8 @@ can't fire. The demo handles this with:
   the room — the banner at the top of the page. This is the same entry point any other
   `matrix:` link would hit, so notifications, links, and `matrix.to` redirects all
   converge on one handler.
-  - Warm path: `.deep_link(matrix_uri(&room_id, &event_id))` on the Rust builder.
-  - Killed path: a `deepLink` field in the JNI handler's JSON, copied onto the
-    `Notification`.
+  - Both paths set it the same way: `.deep_link(matrix_uri(&room_id, &event_id))`
+    in `push_handler.rs`.
   - Because the tap is now `ACTION_VIEW`, it **replaces** the plugin's
     `notificationClicked` event for these notifications (that event still fires for
     notifications without a `deepLink`).
@@ -88,65 +80,36 @@ can't fire. The demo handles this with:
 
 Everything runs in the **main process** — no separate `android:process` is required.
 
-### Verify killed-state delivery with adb (no Firebase needed)
+### Verify killed-state delivery (real FCM)
 
-`DebugSilentPushReceiver` is a debug-only `BroadcastReceiver` that synthesizes a
-silent push and runs the exact handler path above. Because it's manifest-registered,
-an adb broadcast with `FLAG_INCLUDE_STOPPED_PACKAGES` cold-starts the **killed** app
-into that path.
+Killed-state delivery needs a real FCM data message (a cold start driven by
+Firebase itself). Add your own `google-services.json` under
+`src-tauri/gen/android/app/` (a placeholder is committed so builds work without
+one), register for push in the app to get the device token, force-stop the app,
+and send a **data-only** message:
 
 ```bash
 # Build + install the debug APK (x86_64 emulator shown)
 pnpm tauri android build --apk --debug --target x86_64
 adb install -r src-tauri/gen/android/app/build/outputs/apk/x86_64/debug/app-x86_64-debug.apk
 
-# Launch once and grant the notification permission, then kill the app:
+# Launch once, grant the notification permission, tap "Register" to log the
+# device token, then kill the app:
 adb shell am force-stop com.alexis.notiftestapp
 
-# Cold-start the killed app straight into the background silent-push path:
-adb shell am broadcast -a com.alexis.notiftestapp.DEBUG_SILENT_PUSH -f 0x01000020 \
-  --es room_id '!demo:matrix.org' --es event_id "evt$(date +%s)" \
-  -n com.alexis.notiftestapp/.DebugSilentPushReceiver
+# Send a data-only push via FCM HTTP v1 (needs a service-account.json):
+./scripts/send-silent-push.sh <device-token> '!demo:matrix.org'
 ```
 
-Send it **twice for the same `room_id`** (different `event_id`s) and the two messages
-stack into one conversation notification rather than posting separately:
-
-```bash
-for n in 1 2; do
-  adb shell am broadcast -a com.alexis.notiftestapp.DEBUG_SILENT_PUSH -f 0x01000020 \
-    --es room_id '!demo:matrix.org' --es event_id "evt$n-$(date +%s)" \
-    -n com.alexis.notiftestapp/.DebugSilentPushReceiver
-  sleep 1
-done
-```
-
-`-f 0x01000020` = `FLAG_INCLUDE_STOPPED_PACKAGES` (`0x00000020`) +
-`FLAG_RECEIVER_FOREGROUND` (`0x10000000`).
-
-(Real Matrix event ids start with `$`; that's awkward to pass through `adb shell`
-without the device shell trying to expand it, so this debug command uses a
-`$`-free id. A real FCM payload has no such issue.)
+Send it **twice for the same `room_id`** (different `event_id`s) and the two
+messages stack into one conversation notification rather than posting separately.
 
 Expected:
 - A notification appears.
-- `adb shell dumpsys activity activities | grep com.test.app` shows **no resumed
-  activity** — the WebView/Activity was never started.
-- `adb logcat | grep -E 'DemoSilentPushHandler|android_push|DebugSilentPush'` shows
-  the JNI fetch and the background post.
-
-### Real FCM (optional)
-
-To test true FCM cold-start, add your own `google-services.json` under
-`src-tauri/gen/android/app/`, register for push in the app to get the device token,
-and send a **data-only** message via FCM HTTP v1 while the app is force-stopped:
-
-```json
-{ "message": { "token": "<device-token>",
-  "data": { "room_id": "!r:hs", "event_id": "$abc" } } }
-```
-
-The same `DemoSilentPushHandler` runs.
+- `adb shell dumpsys activity activities | grep com.alexis.notiftestapp` shows
+  **no resumed activity** — the WebView/Activity was never started.
+- `adb logcat | grep NotificationsPlugin` shows the FCM arrival, the native
+  fetch, and the background post.
 
 ## Silent push (iOS) — Notification Service Extension
 
@@ -156,8 +119,8 @@ iOS never restarts a force-quit app for a push, so the decode step runs in a
 launches for every `mutable-content: 1` push, in any app state. Its principal
 class subclasses the plugin's `TauriNotificationService`
 (`gen/apple/NotificationService/NotificationService.swift`), which calls the
-Rust handler `src-tauri/src/ios_push.rs` exports via
-`ios_silent_push_handler!` from the same `libapp.a` the app links.
+same Rust handler `src-tauri/src/push_handler.rs` exports via
+`silent_push_handler!` from the same `libapp.a` the app links.
 
 ### Build it, and what the Simulator can(not) show
 
@@ -216,5 +179,3 @@ If Xcode's package resolution can't find the plugin's Swift package, run
 - `onMessageReceived` gives ~10–20s and Doze/background limits can delay or drop
   low-priority messages — send data messages with `"priority":"high"`, and if your
   real fetch may exceed the window, hand off to an expedited `WorkManager` job.
-- `DebugSilentPushReceiver` is exported for adb testing only — remove it for
-  production.
