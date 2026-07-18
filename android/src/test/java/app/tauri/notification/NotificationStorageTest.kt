@@ -186,6 +186,18 @@ class NotificationStorageTest {
     }
 
     @Test
+    fun testClearAllConversations_clearsWholeStoreIncludingAvatars() {
+        // The messaging store holds conv_*, conv_avatar_* AND avatar_* keys; a
+        // filtered removal used to leave avatar_* behind forever.
+        every { mockEditor.clear() } returns mockEditor
+
+        notificationStorage.clearAllConversations()
+
+        verify { mockEditor.clear() }
+        verify { mockEditor.apply() }
+    }
+
+    @Test
     fun testWriteActionGroup_singleAction() {
         val action = NotificationAction()
         action.id = "action1"

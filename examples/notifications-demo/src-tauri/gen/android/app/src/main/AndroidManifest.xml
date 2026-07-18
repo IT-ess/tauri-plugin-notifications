@@ -46,27 +46,18 @@
             android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Declare our background silent-push handler on the plugin's FCM
-             service. `tools:node="merge"` adds this meta-data to the service
-             node contributed by the plugin manifest instead of redefining it.
-             The handler runs even when the app is killed (cold start). -->
+        <!-- Name the app's native library on the plugin's FCM service so
+             data-only pushes reach the Rust handler registered with
+             `silent_push_handler!` — even when the app is killed (cold start).
+             The value is the cargo `[lib]` name (what System.loadLibrary
+             takes). `tools:node="merge"` adds this meta-data to the service
+             node contributed by the plugin manifest. -->
         <service
             android:name="app.tauri.notification.TauriFirebaseMessagingService"
             tools:node="merge">
             <meta-data
-                android:name="app.tauri.notification.SILENT_PUSH_HANDLER"
-                android:value="com.alexis.notiftestapp.DemoSilentPushHandler" />
+                android:name="app.tauri.notification.SILENT_PUSH_LIB"
+                android:value="notifications_demo_lib" />
         </service>
-
-        <!-- Debug-only: lets `adb am broadcast` synthesize a silent push so the
-             killed-state path is testable without a Firebase backend. Exported
-             so adb can reach it; remove for production. -->
-        <receiver
-            android:name=".DebugSilentPushReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.alexis.notiftestapp.DEBUG_SILENT_PUSH" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>

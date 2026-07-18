@@ -55,8 +55,7 @@
 		03427FA10A64D1E581C79DA6 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		0C0256F572631AF949550BAF /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		224A75EEDEE52582C97383D5 /* notifications-demo_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "notifications-demo_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		287F020246EA3218E066D255 /* ios_push.rs */ = {isa = PBXFileReference; path = ios_push.rs; sourceTree = "<group>"; };
-		2EBD1EF76FDF70EA2A21F000 /* android_push.rs */ = {isa = PBXFileReference; path = android_push.rs; sourceTree = "<group>"; };
+		287F020246EA3218E066D255 /* push_handler.rs */ = {isa = PBXFileReference; path = push_handler.rs; sourceTree = "<group>"; };
 		4DE7D32083CD4DDAB98DB356 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		52E54D3B8E98DFFCF69638F0 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		53360DEB65E4CEAF5FE9BE5E /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
@@ -172,8 +171,7 @@
 		5905C36D652D459C00117EEA /* src */ = {
 			isa = PBXGroup;
 			children = (
-				2EBD1EF76FDF70EA2A21F000 /* android_push.rs */,
-				287F020246EA3218E066D255 /* ios_push.rs */,
+				287F020246EA3218E066D255 /* push_handler.rs */,
 				5BBCB37F366BE2E92BF41253 /* lib.rs */,
 				F4AE16599E0637DA30DFE260 /* main.rs */,
 				EDB115859ABE0BCFE6583B15 /* matrix_demo.rs */,

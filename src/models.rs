@@ -18,32 +18,6 @@ pub struct PushNotificationResponse {
     pub device_token: String,
 }
 
-/// Payload handed to a Rust silent-push handler registered with
-/// [`Notifications::on_silent_push`](crate::Notifications::on_silent_push).
-///
-/// A *silent* push is a data-only FCM message — one delivered without a
-/// `notification` block, so Android shows nothing and instead wakes the app with
-/// just the data payload. This is the mechanism a Matrix client uses to receive
-/// only an identifier (e.g. `room_id` / `event_id`), fetch the actual message
-/// from its homeserver, and then raise the user-visible notification itself via
-/// [`Notifications::builder`](crate::Notifications::builder).
-///
-/// Android-only; there is intentionally no JavaScript equivalent.
-#[cfg(all(target_os = "android", feature = "push-notifications"))]
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SilentPushNotification {
-    /// The FCM data payload. FCM delivers data values as strings.
-    #[serde(default)]
-    pub data: HashMap<String, String>,
-    /// The FCM message id, when present.
-    pub message_id: Option<String>,
-    /// The FCM `from` field (sender id or topic), when present.
-    pub from: Option<String>,
-    /// When the message was sent, in milliseconds since the Unix epoch.
-    pub sent_time: Option<i64>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attachment {
@@ -356,12 +330,11 @@ impl NotificationData {
     /// Creates a [`NotificationDataBuilder`] for constructing a notification
     /// payload without a Tauri handle.
     ///
-    /// Use this where no `AppHandle` exists — most notably inside an iOS
-    /// Notification Service Extension handler registered with
-    /// [`ios_silent_push_handler!`](crate::ios_silent_push_handler), the
-    /// counterpart of the Android `SilentPushHandler` killed-state path. For
-    /// posting notifications from a running app, prefer
-    /// `Notifications::builder`, which also sends them.
+    /// Use this where no `AppHandle` exists — most notably inside a
+    /// killed-state silent-push handler registered with
+    /// [`silent_push_handler!`](crate::silent_push_handler) (the iOS NSE and
+    /// Android cold-start paths). For posting notifications from a running
+    /// app, prefer `Notifications::builder`, which also sends them.
     #[must_use]
     pub fn builder() -> NotificationDataBuilder {
         NotificationDataBuilder {
@@ -370,11 +343,267 @@ impl NotificationData {
     }
 }
 
+/// One authoritative definition of the notification setter surface, expanded
+/// into both [`NotificationDataBuilder`] (below) and `NotificationsBuilder`
+/// (src/lib.rs). Both structs hold a `data: NotificationData` field; keeping
+/// the setters in a macro means a new field cannot land in one builder and
+/// silently miss the other.
+///
+/// `const`-ness note: setters that are `const` here are `const` in the
+/// published `NotificationsBuilder` API — removing `const` from any of them is
+/// a breaking change (`cargo semver-checks` gates this).
+macro_rules! notification_setters {
+    () => {
+        /// Sets the notification identifier.
+        #[must_use]
+        pub const fn id(mut self, id: i32) -> Self {
+            self.data.id = id;
+            self
+        }
+
+        /// Identifier of the notification channel that delivers this
+        /// notification (Android).
+        ///
+        /// If the channel does not exist, the notification won't fire; create
+        /// it first with the plugin's channel APIs.
+        #[must_use]
+        pub fn channel_id(mut self, id: impl Into<String>) -> Self {
+            self.data.channel_id.replace(id.into());
+            self
+        }
+
+        /// Sets the notification title.
+        #[must_use]
+        pub fn title(mut self, title: impl Into<String>) -> Self {
+            self.data.title.replace(title.into());
+            self
+        }
+
+        /// Sets the notification body.
+        #[must_use]
+        pub fn body(mut self, body: impl Into<String>) -> Self {
+            self.data.body.replace(body.into());
+            self
+        }
+
+        /// Schedule this notification to fire on a later time or a fixed interval.
+        #[must_use]
+        pub const fn schedule(mut self, schedule: Schedule) -> Self {
+            self.data.schedule.replace(schedule);
+            self
+        }
+
+        /// Multiline text.
+        /// Changes the notification style to big text.
+        /// Cannot be used with `inboxLines`.
+        #[must_use]
+        pub fn large_body(mut self, large_body: impl Into<String>) -> Self {
+            self.data.large_body.replace(large_body.into());
+            self
+        }
+
+        /// Detail text for the notification with `largeBody`, `inboxLines` or `groupSummary`.
+        #[must_use]
+        pub fn summary(mut self, summary: impl Into<String>) -> Self {
+            self.data.summary.replace(summary.into());
+            self
+        }
+
+        /// Append a chat message, rendering the notification with Android
+        /// `MessagingStyle` (per-sender circular avatars). Adding any message takes
+        /// precedence over `largeBody` / `inboxLines`.
+        ///
+        /// On iOS this only applies to the silent-push NSE path
+        /// ([`silent_push_handler!`](crate::silent_push_handler)): the last
+        /// message with a sender turns the delivery into a communication
+        /// notification (`INSendMessageIntent`), drawing the sender's avatar
+        /// instead of the app icon. The host app must carry the
+        /// `com.apple.developer.usernotifications.communication` entitlement and
+        /// declare `INSendMessageIntent` in its Info.plist `NSUserActivityTypes`.
+        #[must_use]
+        pub fn message(mut self, message: NotificationMessage) -> Self {
+            self.data.messages.push(message);
+            self
+        }
+
+        /// Conversation title shown above the messages (typically the room name for a
+        /// group conversation). Used with [`message`](Self::message). On iOS it
+        /// becomes the communication notification's group name (with
+        /// [`group_conversation`](Self::group_conversation)).
+        #[must_use]
+        pub fn conversation_title(mut self, title: impl Into<String>) -> Self {
+            self.data.conversation_title.replace(title.into());
+            self
+        }
+
+        /// Mark the conversation as a group (multiple participants), which lets the
+        /// system show the conversation title.
+        #[must_use]
+        pub const fn group_conversation(mut self) -> Self {
+            self.data.group_conversation = true;
+            self
+        }
+
+        /// Set the group conversation's (room's) avatar as base64-encoded image
+        /// bytes (PNG/JPEG). With
+        /// [`group_conversation`](Self::group_conversation) it becomes the
+        /// notification's icon in place of the sender's avatar, branding the
+        /// notification as the room: the communication notification's icon on iOS
+        /// (silent-push NSE path), the `MessagingStyle` conversation icon
+        /// (largeIcon) on Android.
+        #[must_use]
+        pub fn conversation_avatar_bytes(mut self, base64: impl Into<String>) -> Self {
+            self.data.conversation_avatar_bytes.replace(base64.into());
+            self
+        }
+
+        /// Display name of the local user in a `MessagingStyle` conversation
+        /// (defaults to "Me"). Android only.
+        #[must_use]
+        pub fn self_name(mut self, name: impl Into<String>) -> Self {
+            self.data.self_name.replace(name.into());
+            self
+        }
+
+        /// Whether a `MessagingStyle` notification appends to an already-showing
+        /// notification with the same `id` (default `true`), accumulating a
+        /// conversation. Set `false` to replace it instead. Android only.
+        #[must_use]
+        pub const fn append_messages(mut self, append: bool) -> Self {
+            self.data.append_messages = append;
+            self
+        }
+
+        /// Android only. Make tapping the notification open a deep link
+        /// (`ACTION_VIEW` for this URI, e.g. `matrix:roomid/…`) pinned to the app's
+        /// own package, instead of launching the default activity. The app's
+        /// matching `<intent-filter>` receives it (e.g. via
+        /// `tauri-plugin-deep-link`); this replaces the `notificationClicked`
+        /// event for that tap. On iOS, put the URI in [`extra`](Self::extra)
+        /// instead — string extras surface in the `notificationClicked` event's
+        /// `data`.
+        #[must_use]
+        pub fn deep_link(mut self, uri: impl Into<String>) -> Self {
+            self.data.deep_link.replace(uri.into());
+            self
+        }
+
+        /// Defines an action type for this notification.
+        #[must_use]
+        pub fn action_type_id(mut self, action_type_id: impl Into<String>) -> Self {
+            self.data.action_type_id.replace(action_type_id.into());
+            self
+        }
+
+        /// Identifier used to group multiple notifications (iOS `threadIdentifier`).
+        ///
+        /// <https://developer.apple.com/documentation/usernotifications/unmutablenotificationcontent/1649872-threadidentifier>
+        #[must_use]
+        pub fn group(mut self, group: impl Into<String>) -> Self {
+            self.data.group.replace(group.into());
+            self
+        }
+
+        /// Instructs the system that this notification is the summary of a group on Android.
+        #[must_use]
+        pub const fn group_summary(mut self) -> Self {
+            self.data.group_summary = true;
+            self
+        }
+
+        /// The sound resource name. Only available on mobile.
+        #[must_use]
+        pub fn sound(mut self, sound: impl Into<String>) -> Self {
+            self.data.sound.replace(sound.into());
+            self
+        }
+
+        /// Append an inbox line to the notification.
+        /// Changes the notification style to inbox.
+        /// Cannot be used with `largeBody`.
+        ///
+        /// Only supports up to 5 lines.
+        #[must_use]
+        pub fn inbox_line(mut self, line: impl Into<String>) -> Self {
+            self.data.inbox_lines.push(line.into());
+            self
+        }
+
+        /// Notification icon.
+        ///
+        /// On Android the icon must be placed in the app's `res/drawable` folder.
+        #[must_use]
+        pub fn icon(mut self, icon: impl Into<String>) -> Self {
+            self.data.icon.replace(icon.into());
+            self
+        }
+
+        /// Notification large icon (Android).
+        ///
+        /// The icon must be placed in the app's `res/drawable` folder.
+        #[must_use]
+        pub fn large_icon(mut self, large_icon: impl Into<String>) -> Self {
+            self.data.large_icon.replace(large_icon.into());
+            self
+        }
+
+        /// Icon color on Android.
+        #[must_use]
+        pub fn icon_color(mut self, icon_color: impl Into<String>) -> Self {
+            self.data.icon_color.replace(icon_color.into());
+            self
+        }
+
+        /// Append an attachment to the notification.
+        #[must_use]
+        pub fn attachment(mut self, attachment: Attachment) -> Self {
+            self.data.attachments.push(attachment);
+            self
+        }
+
+        /// Adds an extra payload to store in the notification.
+        #[must_use]
+        pub fn extra(mut self, key: impl Into<String>, value: impl Serialize) -> Self {
+            if let Ok(value) = serde_json::to_value(value) {
+                self.data.extra.insert(key.into(), value);
+            }
+            self
+        }
+
+        /// If true, the notification cannot be dismissed by the user on Android.
+        ///
+        /// An application service must manage the dismissal of the notification.
+        /// It is typically used to indicate a background task that is pending (e.g. a file download)
+        /// or the user is engaged with (e.g. playing music).
+        #[must_use]
+        pub const fn ongoing(mut self) -> Self {
+            self.data.ongoing = true;
+            self
+        }
+
+        /// Automatically cancel the notification when the user clicks on it.
+        #[must_use]
+        pub const fn auto_cancel(mut self) -> Self {
+            self.data.auto_cancel = true;
+            self
+        }
+
+        /// Changes the notification presentation to be silent on iOS (no badge, no sound, not listed).
+        #[must_use]
+        pub const fn silent(mut self) -> Self {
+            self.data.silent = true;
+            self
+        }
+    };
+}
+pub(crate) use notification_setters;
+
 /// Builds a [`NotificationData`] without requiring a Tauri handle.
 ///
-/// Mirrors the setter surface of `NotificationsBuilder`, but [`build`] returns
-/// the payload instead of sending it — the caller (e.g. the plugin's iOS
-/// Notification Service Extension) is responsible for displaying it.
+/// Same setter surface as `NotificationsBuilder` (both expand
+/// `notification_setters!`), but [`build`] returns the payload instead of
+/// sending it — the caller (e.g. the plugin's iOS Notification Service
+/// Extension) is responsible for displaying it.
 ///
 /// [`build`]: Self::build
 #[derive(Debug)]
@@ -383,237 +612,7 @@ pub struct NotificationDataBuilder {
 }
 
 impl NotificationDataBuilder {
-    /// Sets the notification identifier.
-    #[must_use]
-    pub const fn id(mut self, id: i32) -> Self {
-        self.data.id = id;
-        self
-    }
-
-    /// Identifier of the channel that delivers this notification (Android).
-    #[must_use]
-    pub fn channel_id(mut self, id: impl Into<String>) -> Self {
-        self.data.channel_id.replace(id.into());
-        self
-    }
-
-    /// Sets the notification title.
-    #[must_use]
-    pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.data.title.replace(title.into());
-        self
-    }
-
-    /// Sets the notification body.
-    #[must_use]
-    pub fn body(mut self, body: impl Into<String>) -> Self {
-        self.data.body.replace(body.into());
-        self
-    }
-
-    /// Schedule this notification to fire on a later time or a fixed interval.
-    #[must_use]
-    pub fn schedule(mut self, schedule: Schedule) -> Self {
-        self.data.schedule.replace(schedule);
-        self
-    }
-
-    /// Multiline text.
-    /// Changes the notification style to big text.
-    /// Cannot be used with `inboxLines`.
-    #[must_use]
-    pub fn large_body(mut self, large_body: impl Into<String>) -> Self {
-        self.data.large_body.replace(large_body.into());
-        self
-    }
-
-    /// Detail text for the notification with `largeBody`, `inboxLines` or `groupSummary`.
-    #[must_use]
-    pub fn summary(mut self, summary: impl Into<String>) -> Self {
-        self.data.summary.replace(summary.into());
-        self
-    }
-
-    /// Append a chat message, rendering the notification with Android
-    /// `MessagingStyle` (per-sender circular avatars). Adding any message takes
-    /// precedence over `largeBody` / `inboxLines`.
-    ///
-    /// On iOS this only applies to the silent-push NSE path
-    /// ([`ios_silent_push_handler!`](crate::ios_silent_push_handler)): the last
-    /// message with a sender turns the delivery into a communication
-    /// notification (`INSendMessageIntent`), drawing the sender's avatar
-    /// instead of the app icon. The host app must carry the
-    /// `com.apple.developer.usernotifications.communication` entitlement and
-    /// declare `INSendMessageIntent` in its Info.plist `NSUserActivityTypes`.
-    #[must_use]
-    pub fn message(mut self, message: NotificationMessage) -> Self {
-        self.data.messages.push(message);
-        self
-    }
-
-    /// Conversation title shown above the messages (typically the room name for a
-    /// group conversation). Used with [`message`](Self::message). On iOS it
-    /// becomes the communication notification's group name (with
-    /// [`group_conversation`](Self::group_conversation)).
-    #[must_use]
-    pub fn conversation_title(mut self, title: impl Into<String>) -> Self {
-        self.data.conversation_title.replace(title.into());
-        self
-    }
-
-    /// Mark the conversation as a group (multiple participants), which lets the
-    /// system show the conversation title.
-    #[must_use]
-    pub const fn group_conversation(mut self) -> Self {
-        self.data.group_conversation = true;
-        self
-    }
-
-    /// Set the group conversation's (room's) avatar as base64-encoded image
-    /// bytes (PNG/JPEG). With
-    /// [`group_conversation`](Self::group_conversation) it becomes the
-    /// notification's icon in place of the sender's avatar, branding the
-    /// notification as the room: the communication notification's icon on iOS
-    /// (silent-push NSE path), the `MessagingStyle` conversation icon
-    /// (largeIcon) on Android.
-    #[must_use]
-    pub fn conversation_avatar_bytes(mut self, base64: impl Into<String>) -> Self {
-        self.data.conversation_avatar_bytes.replace(base64.into());
-        self
-    }
-
-    /// Display name of the local user in a `MessagingStyle` conversation
-    /// (defaults to "Me"). Android only.
-    #[must_use]
-    pub fn self_name(mut self, name: impl Into<String>) -> Self {
-        self.data.self_name.replace(name.into());
-        self
-    }
-
-    /// Whether a `MessagingStyle` notification appends to an already-showing
-    /// notification with the same `id` (default `true`), accumulating a
-    /// conversation. Set `false` to replace it instead. Android only.
-    #[must_use]
-    pub const fn append_messages(mut self, append: bool) -> Self {
-        self.data.append_messages = append;
-        self
-    }
-
-    /// Android only. Make tapping the notification open a deep link
-    /// (`ACTION_VIEW` for this URI, e.g. `matrix:roomid/…`) pinned to the app's
-    /// own package, instead of launching the default activity. On iOS, put the
-    /// URI in [`extra`](Self::extra) instead — string extras surface in the
-    /// `notificationClicked` event's `data`.
-    #[must_use]
-    pub fn deep_link(mut self, uri: impl Into<String>) -> Self {
-        self.data.deep_link.replace(uri.into());
-        self
-    }
-
-    /// Defines an action type for this notification.
-    #[must_use]
-    pub fn action_type_id(mut self, action_type_id: impl Into<String>) -> Self {
-        self.data.action_type_id.replace(action_type_id.into());
-        self
-    }
-
-    /// Identifier used to group multiple notifications (iOS `threadIdentifier`).
-    #[must_use]
-    pub fn group(mut self, group: impl Into<String>) -> Self {
-        self.data.group.replace(group.into());
-        self
-    }
-
-    /// Instructs the system that this notification is the summary of a group on Android.
-    #[must_use]
-    pub const fn group_summary(mut self) -> Self {
-        self.data.group_summary = true;
-        self
-    }
-
-    /// The sound resource name. Only available on mobile.
-    #[must_use]
-    pub fn sound(mut self, sound: impl Into<String>) -> Self {
-        self.data.sound.replace(sound.into());
-        self
-    }
-
-    /// Append an inbox line to the notification.
-    /// Changes the notification style to inbox.
-    /// Cannot be used with `largeBody`.
-    ///
-    /// Only supports up to 5 lines.
-    #[must_use]
-    pub fn inbox_line(mut self, line: impl Into<String>) -> Self {
-        self.data.inbox_lines.push(line.into());
-        self
-    }
-
-    /// Notification icon.
-    ///
-    /// On Android the icon must be placed in the app's `res/drawable` folder.
-    #[must_use]
-    pub fn icon(mut self, icon: impl Into<String>) -> Self {
-        self.data.icon.replace(icon.into());
-        self
-    }
-
-    /// Notification large icon (Android).
-    ///
-    /// The icon must be placed in the app's `res/drawable` folder.
-    #[must_use]
-    pub fn large_icon(mut self, large_icon: impl Into<String>) -> Self {
-        self.data.large_icon.replace(large_icon.into());
-        self
-    }
-
-    /// Icon color on Android.
-    #[must_use]
-    pub fn icon_color(mut self, icon_color: impl Into<String>) -> Self {
-        self.data.icon_color.replace(icon_color.into());
-        self
-    }
-
-    /// Append an attachment to the notification.
-    #[must_use]
-    pub fn attachment(mut self, attachment: Attachment) -> Self {
-        self.data.attachments.push(attachment);
-        self
-    }
-
-    /// Adds an extra payload to store in the notification.
-    #[must_use]
-    pub fn extra(mut self, key: impl Into<String>, value: impl Serialize) -> Self {
-        if let Ok(value) = serde_json::to_value(value) {
-            self.data.extra.insert(key.into(), value);
-        }
-        self
-    }
-
-    /// If true, the notification cannot be dismissed by the user on Android.
-    ///
-    /// An application service must manage the dismissal of the notification.
-    /// It is typically used to indicate a background task that is pending (e.g. a file download)
-    /// or the user is engaged with (e.g. playing music).
-    #[must_use]
-    pub const fn ongoing(mut self) -> Self {
-        self.data.ongoing = true;
-        self
-    }
-
-    /// Automatically cancel the notification when the user clicks on it.
-    #[must_use]
-    pub const fn auto_cancel(mut self) -> Self {
-        self.data.auto_cancel = true;
-        self
-    }
-
-    /// Changes the notification presentation to be silent on iOS (no badge, no sound, not listed).
-    #[must_use]
-    pub const fn silent(mut self) -> Self {
-        self.data.silent = true;
-        self
-    }
+    notification_setters!();
 
     /// Returns the built payload.
     #[must_use]

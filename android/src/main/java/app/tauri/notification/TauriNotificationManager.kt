@@ -51,6 +51,23 @@ private const val DEEP_LINK_INTENT_TYPE = "application/octet-stream"
 // Upper bound on messages retained in an accumulating MessagingStyle notification.
 private const val MAX_MESSAGES = 25
 
+// Strips the base64-heavy conversation fields from the notification JSON that
+// rides along in PendingIntent extras, keeping every Binder transaction that
+// marshals the intent (content/action PendingIntents, conversation shortcut)
+// far under the ~1MB limit. Everything else (id/title/body/extra/deepLink/…)
+// still round-trips to the notificationClicked event.
+internal fun slimSourceJson(json: String?): String? {
+  if (json == null) return null
+  return try {
+    val obj = JSONObject(json)
+    obj.remove("messages")
+    obj.remove("conversationAvatarBytes")
+    obj.toString()
+  } catch (e: JSONException) {
+    json
+  }
+}
+
 class TauriNotificationManager(
   private val storage: NotificationStorage,
   private val activity: Activity?,
@@ -294,17 +311,27 @@ class TauriNotificationManager(
 
     var lastAvatar: Bitmap? = null
     var lastPerson: Person? = null
+    // Decode each sender's avatar once, not once per message in the thread.
+    val avatarCache = HashMap<String, Bitmap?>()
     for (message in capped) {
-      val avatar = Notification.decodeBase64Bitmap(message.avatarBytes ?: storage.loadAvatar(message.personKey))
-      if (avatar != null) lastAvatar = avatar
-      val person = Person.Builder()
-        .setName(message.sender)
-        .apply {
-          message.personKey?.let { setKey(it) }
-          avatar?.let { setIcon(IconCompat.createWithBitmap(it)) }
-        }
-        .build()
-      lastPerson = person
+      val avatar = message.personKey?.let { key ->
+        avatarCache.getOrPut(key) { Notification.decodeBase64Bitmap(storage.loadAvatar(key)) }
+      } ?: Notification.decodeBase64Bitmap(message.avatarBytes)
+      // A message without a sender is from the local user: pass a null Person so
+      // MessagingStyle renders it as the style's self user.
+      val person = message.sender?.let { sender ->
+        Person.Builder()
+          .setName(sender)
+          .apply {
+            message.personKey?.let { setKey(it) }
+            avatar?.let { setIcon(IconCompat.createWithBitmap(it)) }
+          }
+          .build()
+      }
+      if (person != null) {
+        lastPerson = person
+        if (avatar != null) lastAvatar = avatar
+      }
       val timestamp = if (message.timestamp != 0L) message.timestamp else System.currentTimeMillis()
       style.addMessage(message.text, timestamp, person)
     }
@@ -451,7 +478,7 @@ class TauriNotificationManager(
     intent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
     intent.putExtra(NOTIFICATION_INTENT_KEY, notification.id)
     intent.putExtra(ACTION_INTENT_KEY, action)
-    intent.putExtra(NOTIFICATION_OBJ_INTENT_KEY, notification.sourceJson)
+    intent.putExtra(NOTIFICATION_OBJ_INTENT_KEY, slimSourceJson(notification.sourceJson))
     val schedule = notification.schedule
     intent.putExtra(NOTIFICATION_IS_REMOVABLE_KEY, schedule == null || schedule.isRemovable())
     return intent
