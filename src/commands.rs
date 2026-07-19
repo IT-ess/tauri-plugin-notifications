@@ -151,6 +151,26 @@ pub fn remove_all<R: Runtime>(
     notification.remove_all_active()
 }
 
+#[cfg(mobile)]
+#[command]
+pub fn remove_active_by_group<R: Runtime>(
+    _app: AppHandle<R>,
+    notification: State<'_, Notifications<R>>,
+    group: String,
+) -> Result<()> {
+    notification.remove_active_by_group(group)
+}
+
+#[cfg(mobile)]
+#[command]
+pub fn set_badge_count<R: Runtime>(
+    _app: AppHandle<R>,
+    notification: State<'_, Notifications<R>>,
+    count: i32,
+) -> Result<()> {
+    notification.set_badge_count(count)
+}
+
 #[command]
 pub fn cancel<R: Runtime>(
     _app: AppHandle<R>,

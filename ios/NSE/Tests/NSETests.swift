@@ -81,6 +81,7 @@ final class TauriNotificationServiceTests: XCTestCase {
         "summary": "!abc:matrix.org",
         "actionTypeId": "message",
         "sound": "ping.caf",
+        "badge": 3,
         "extra": {
           "deepLink": "matrix:roomid/abc:matrix.org/e/xyz",
           "unreadCount": 2,
@@ -108,6 +109,7 @@ final class TauriNotificationServiceTests: XCTestCase {
     XCTAssertEqual(delivered.summaryArgument, "!abc:matrix.org")
     XCTAssertEqual(delivered.categoryIdentifier, "message")
     XCTAssertNotNil(delivered.sound)
+    XCTAssertEqual(delivered.badge, 3)
 
     // `extra` merged into userInfo (stringified), original push keys kept —
     // this is what the plugin's notificationClicked handler forwards on tap.
@@ -152,6 +154,7 @@ final class TauriNotificationServiceTests: XCTestCase {
         "extra": {"deepLink": "matrix:roomid/abc:matrix.org/e/xyz"},
         "conversationTitle": "Rust enjoyers",
         "groupConversation": true,
+        "badge": 3,
         "messages": [{
           "sender": "Alice",
           "personKey": "@alice:matrix.org",
@@ -168,6 +171,8 @@ final class TauriNotificationServiceTests: XCTestCase {
     XCTAssertEqual(delivered.threadIdentifier, "!abc:matrix.org")
     XCTAssertEqual(delivered.userInfo["deepLink"] as? String, "matrix:roomid/abc:matrix.org/e/xyz")
     XCTAssertEqual(delivered.userInfo["room_id"] as? String, "!abc:matrix.org")
+    // The communication rewrite (`updating(from:)`) copy keeps the badge too.
+    XCTAssertEqual(delivered.badge, 3)
   }
 
   /// A message without a sender cannot become a communication notification;
@@ -193,6 +198,8 @@ final class TauriNotificationServiceTests: XCTestCase {
     XCTAssertEqual(delivered.title, "Alice")
     // Body untouched → the payload's own alert text remains.
     XCTAssertEqual(delivered.body, "SINGLE_UNREAD")
+    // No badge in the response → app icon badge left untouched.
+    XCTAssertNil(delivered.badge)
   }
 
   // MARK: - flattenCustomKeys
