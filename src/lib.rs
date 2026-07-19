@@ -160,6 +160,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R, Option<PluginConfig>> {
             commands::set_click_listener_active,
             commands::remove_active,
             commands::remove_all,
+            #[cfg(mobile)]
+            commands::remove_active_by_group,
+            #[cfg(mobile)]
+            commands::set_badge_count,
             commands::cancel,
             commands::cancel_all,
             commands::create_channel,
@@ -354,6 +358,14 @@ mod tests {
         let mut data = create_test_data();
         data.silent = true;
         assert!(data.silent);
+    }
+
+    #[test]
+    fn test_notification_data_badge() {
+        let mut data = create_test_data();
+        assert!(data.badge.is_none());
+        data.badge = Some(3);
+        assert_eq!(data.badge, Some(3));
     }
 
     #[test]

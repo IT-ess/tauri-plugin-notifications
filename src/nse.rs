@@ -375,6 +375,7 @@ mod tests {
                 .title("Alice")
                 .body(format!("event in {room_id} (store: {data_dir})"))
                 .group(room_id)
+                .badge(3)
                 .extra("deepLink", format!("matrix:roomid/{room_id}"))
                 .build(),
         )
@@ -408,6 +409,8 @@ mod tests {
         assert_eq!(json["id"], 1);
         assert_eq!(json["title"], "Alice");
         assert_eq!(json["group"], "!abc:matrix.org");
+        // Pins the camelCase wire key the NSE Swift decoder reads.
+        assert_eq!(json["badge"], 3);
         assert_eq!(json["extra"]["deepLink"], "matrix:roomid/!abc:matrix.org");
         assert_eq!(json["body"], "event in !abc:matrix.org (store: /data)");
     }

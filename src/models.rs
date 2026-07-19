@@ -224,6 +224,9 @@ pub struct NotificationData {
     /// matching `<intent-filter>` (e.g. via `tauri-plugin-deep-link`) then
     /// receives it. Replaces the `notificationClicked` event for that tap.
     pub(crate) deep_link: Option<String>,
+    /// App icon badge count applied when this notification is delivered (iOS
+    /// silent-push NSE path only). `None` leaves the current badge untouched.
+    pub(crate) badge: Option<i32>,
 }
 
 const fn default_true() -> bool {
@@ -322,6 +325,7 @@ impl Default for NotificationData {
             self_name: None,
             append_messages: true,
             deep_link: None,
+            badge: None,
         }
     }
 }
@@ -592,6 +596,15 @@ macro_rules! notification_setters {
         #[must_use]
         pub const fn silent(mut self) -> Self {
             self.data.silent = true;
+            self
+        }
+
+        /// Sets the app icon badge count applied with this notification (iOS
+        /// silent-push NSE path only; ignored elsewhere). Omit to leave the
+        /// current badge unchanged.
+        #[must_use]
+        pub const fn badge(mut self, count: i32) -> Self {
+            self.data.badge.replace(count);
             self
         }
     };

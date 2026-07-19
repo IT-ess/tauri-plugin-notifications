@@ -129,6 +129,44 @@ impl<R: Runtime> Notifications<R> {
             .map_err(Into::into)
     }
 
+    /// Remove every delivered notification whose group (iOS
+    /// `threadIdentifier`) matches. iOS only — unlike [`Self::remove_active`],
+    /// this also reaches remote (NSE-delivered) notifications, whose
+    /// APNs-assigned identifiers numeric-id matching cannot address.
+    /// Idempotent: matching nothing is not an error.
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    pub fn remove_active_by_group(&self, group: impl Into<String>) -> crate::Result<()> {
+        #[cfg(target_os = "ios")]
+        {
+            let mut args = HashMap::new();
+            args.insert("group", group.into());
+            self.0
+                .run_mobile_plugin("removeActiveByGroup", args)
+                .map_err(Into::into)
+        }
+        #[cfg(target_os = "android")]
+        return Err(crate::Error::Io(std::io::Error::other(
+            "remove_active_by_group is only supported on iOS; use remove_active with the notification id",
+        )));
+    }
+
+    /// Set the app icon badge count (`0` clears it). iOS only.
+    #[allow(unused_variables)]
+    pub fn set_badge_count(&self, count: i32) -> crate::Result<()> {
+        #[cfg(target_os = "ios")]
+        {
+            let mut args = HashMap::new();
+            args.insert("count", count);
+            self.0
+                .run_mobile_plugin("setBadgeCount", args)
+                .map_err(Into::into)
+        }
+        #[cfg(target_os = "android")]
+        return Err(crate::Error::Io(std::io::Error::other(
+            "set_badge_count is only supported on iOS",
+        )));
+    }
+
     pub async fn active(&self) -> crate::Result<Vec<ActiveNotification>> {
         self.0
             .run_mobile_plugin_async("getActive", ())

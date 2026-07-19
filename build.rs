@@ -15,6 +15,8 @@ const COMMANDS: &[&str] = &[
     "get_pending",
     "remove_active",
     "remove_all",
+    "remove_active_by_group",
+    "set_badge_count",
     "get_active",
     "check_permissions",
     "show",
