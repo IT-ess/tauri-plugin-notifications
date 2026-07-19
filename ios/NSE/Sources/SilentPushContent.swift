@@ -53,10 +53,13 @@ struct SilentPushContent: Decodable {
   /// with `groupConversation`, drawn as the notification icon instead of the
   /// sender's avatar.
   let conversationAvatarBytes: String?
+  /// App icon badge count; `nil` leaves the current badge unchanged.
+  let badge: Int?
 
   private enum CodingKeys: String, CodingKey {
     case title, body, sound, group, summary, actionTypeId, attachments,
-      messages, conversationTitle, groupConversation, conversationAvatarBytes
+      messages, conversationTitle, groupConversation, conversationAvatarBytes,
+      badge
   }
 
   /// Applies the decoded fields onto `content` (the mutable copy of the push's
@@ -89,6 +92,11 @@ struct SilentPushContent: Decodable {
     }
     if let sound = sound {
       content.sound = UNNotificationSound(named: UNNotificationSoundName(sound))
+    }
+    // Only set when the count is known: a nil badge leaves the app icon's
+    // current badge untouched (never guess a number).
+    if let badge = badge {
+      content.badge = NSNumber(value: badge)
     }
     if let attachments = attachments, !attachments.isEmpty {
       var created: [UNNotificationAttachment] = []
