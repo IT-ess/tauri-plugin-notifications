@@ -438,6 +438,251 @@ app.notifications()
     .show()?;
 ```
 
+#### Silent (data-only) pushes — one Rust handler, every app state **(Android)**
+
+Some apps don't put the user-visible content in the push payload. Instead the
+server sends a *silent* push — a data-only message carrying just an identifier —
+and the app fetches the real content and raises the notification itself. This is
+how a Matrix client typically works: the push contains only a `room_id` /
+`event_id`, and the client loads the event from its store before notifying.
+
+On the server side this is a data-only FCM message (no `notification` block):
+
+```json
+{
+  "message": {
+    "token": "<device-token>",
+    "data": { "room_id": "!abc:matrix.org", "event_id": "$xyz" }
+  }
+}
+```
+
+Firebase's messaging service runs in your app's **main process** and executes
+for a data-only message in **every** app state — including after the OS killed
+the app, where it cold-starts the process *without* the Activity/WebView, so
+there is no Tauri runtime and no `AppHandle`. The plugin therefore routes these
+messages to a plain Rust function in your app's own native library (loading the
+`.so` does **not** start Tauri), registered with the same macro that powers the
+iOS NSE path (see below) — write the handler once, it serves both platforms:
+
+```rust
+// src-tauri/src/push_handler.rs
+// add `#[cfg(any(target_os = "android", target_os = "ios"))] mod push_handler;` in lib.rs
+use std::collections::HashMap;
+use tauri_plugin_notifications::{NotificationData, SilentPushResponse};
+
+fn handle_silent_push(
+    data_dir: &str,                    // the app data dir (what Tauri's path API resolves)
+    data: HashMap<String, String>,     // the FCM data payload
+) -> SilentPushResponse {
+    let (Some(room_id), Some(event_id)) = (data.get("room_id"), data.get("event_id"))
+    else {
+        return SilentPushResponse::Decline;
+    };
+    // Open your on-disk store under `data_dir` (e.g. matrix-sdk's
+    // NotificationClient), fetch/decrypt the event, then describe the
+    // notification; the plugin renders and posts it:
+    SilentPushResponse::Notification(
+        NotificationData::builder()
+            .title("Alice")
+            .body("decrypted message body")
+            .deep_link(format!("matrix:roomid/{room_id}/e/{event_id}"))
+            .build(),
+    )
+}
+
+tauri_plugin_notifications::silent_push_handler!(handle_silent_push);
+```
+
+Two extras for real-world clients:
+
+- **`SilentPushResponse::ClearActive`** — for pushes that mean "everything has
+  been read elsewhere" (e.g. a Matrix badge push with `unread == 0`): the
+  plugin posts nothing, dismisses every active notification, and drops its
+  stored conversation histories. Android only (iOS never delivers such pushes
+  to the NSE; there it degrades to `Decline`).
+- **`android_init` hook** — a cold-started push process skipped every
+  process-wide initialization your app normally performs at startup (TLS
+  roots, keyring backend, `ndk_context`, …). Pass an idempotent hook that
+  replays them; it runs with the JNI env and the Application context before
+  every handler invocation:
+
+  ```rust
+  #[cfg(target_os = "android")]
+  fn android_init(env: &mut jni::JNIEnv, context: &jni::objects::JObject) {
+      // e.g. ndk_context / rustls-platform-verifier / keyring setup
+  }
+
+  tauri_plugin_notifications::silent_push_handler!(handle_silent_push, android_init = android_init);
+  ```
+
+Then name your native library on the plugin's messaging service via
+`<meta-data>` in your app's `AndroidManifest.xml` (the value is the cargo
+`[lib]` name — what `System.loadLibrary` takes):
+
+```xml
+<service
+    android:name="app.tauri.notification.TauriFirebaseMessagingService"
+    tools:node="merge">
+    <meta-data
+        android:name="app.tauri.notification.SILENT_PUSH_LIB"
+        android:value="app_lib" />
+</service>
+```
+
+This API is intentionally **Rust-only** — there is no JavaScript equivalent,
+because the fetch-then-display logic belongs in the native layer. **Failure
+semantics:** a silent push is never processed twice and never lost silently —
+when the handler posts a notification (or clears the shade) the message is
+consumed; when the meta-data is absent, the library fails to load, or the
+handler declines (`SilentPushResponse::Decline`), panics, or returns malformed
+JSON, the message falls through to the JS `push-message` event exactly as if
+no handler existed.
+
+To show the same notification from the running app (e.g. a local echo), build
+it with the shared handler and hand it to the warm-path builder:
+`app.notifications().builder().data(notification).show()`.
+
+For chat apps, render a richer **`MessagingStyle`** notification — a sender
+name, a circular avatar, and an expandable message — with `.message(...)`
+instead of a plain `.body(...)`. The avatar is supplied as **base64 image
+bytes**, so it can be a dynamic image (e.g. a Matrix avatar your background
+fetch downloaded) rather than a bundled drawable; the plugin decodes it:
+
+```rust
+use tauri_plugin_notifications::{NotificationData, NotificationMessage};
+
+NotificationData::builder()
+    .id(1)
+    .conversation_title("#general")     // room name (group conversations)
+    .group_conversation()
+    .message(
+        NotificationMessage::new("Hey, are you around later to review the PR?")
+            .sender("Alice")
+            .person_key("@alice:matrix.org") // stable id; merges a sender's messages
+            .avatar_bytes(avatar_base64),    // base64 PNG/JPEG; shown circular
+    )
+    .build()
+```
+
+The same fields exist on the JS `Options` (`messages`, `conversationTitle`, …)
+for the warm/foreground paths. Android only.
+
+**Grouping a conversation's messages.** Android merges notifications by **id**, so to
+collect a chat into one notification, post every message for a room with the **same id**
+(e.g. a stable hash of the room id). By default (`appendMessages = true`) the plugin
+**accumulates** the conversation: it persists the messages for that id and appends each
+new one, so you only send the single new event each time and the prior messages are
+restored — reliably, even across a cold start (the history is stored on disk rather than
+read back from the shown notification, which is unreliable on some OS versions). Sender
+avatars are stored once per `personKey` to keep it small, and history is capped to the
+most recent messages. Set `appendMessages = false` to replace the conversation instead
+(e.g. once the room is read); cancelling the notification also clears its history.
+
+**Caveats:** `onMessageReceived` gives you a short (~10–20s) window and Doze /
+background restrictions can delay or drop low-priority messages — send data
+messages with `"priority":"high"`, and if your fetch may exceed the window hand
+off to an expedited `WorkManager` job. A separate `android:process` is *optional*
+(memory isolation only) and would force a cross-process lock on a shared store.
+
+A runnable end-to-end demonstration — a button that feeds a fake silent push
+through the exact handler a real FCM data message reaches — lives in
+[`examples/notifications-demo`](examples/notifications-demo); see its README.
+
+#### Silent pushes decoded in a Notification Service Extension **(iOS)**
+
+iOS has no equivalent of Android's "run the messaging service after the app was
+killed": background (`content-available`) pushes are throttled and never
+delivered to a force-quit app. The reliable pattern — the one Matrix clients
+use — is a **Notification Service Extension (NSE)**: send the push with
+`mutable-content: 1` and a generic fallback `alert`, and iOS launches your
+extension in **every** app state (force-quit included) with ~30 s to rewrite
+the content before display:
+
+```json
+{
+  "aps": {
+    "mutable-content": 1,
+    "content-available": 1,
+    "alert": { "loc-key": "SINGLE_UNREAD", "loc-args": [] }
+  },
+  "room_id": "!abc:matrix.org",
+  "event_id": "$xyz"
+}
+```
+
+An NSE is a separate Xcode target the plugin can't create for you, but it ships
+both halves of the work:
+
+**1. The Rust handler** — the **same** `silent_push_handler!` handler shown in
+the Android section above; one invocation exports both the Android JNI entry
+and the C symbols the NSE resolves. The extension links the same `libapp.a`
+static library Tauri already builds (linking it does **not** start Tauri). On
+iOS, `data_dir` is the App Group container path and `data` holds the payload's
+top-level custom keys (minus `aps`); prefer `.extra(...)` over the
+Android-only `.deep_link(...)` for tap routing.
+
+Declining keeps the push's own content, so the fallback `alert`
+(`SINGLE_UNREAD` above) is shown. String values in `extra` land in the
+notification's `userInfo` and surface in the `notificationClicked` event's
+`data` when tapped — put your deep link there and navigate from JS. (The `id`
+field is ignored: an NSE cannot change the identifier APNs assigned, so remote
+notifications report `id: -1` in events.)
+
+**2. The Swift side** — in Xcode: *File → New → Target → Notification Service
+Extension*, then:
+
+- Add the plugin's `ios/` directory as a local Swift package and link the
+  **`tauri-plugin-notifications-nse`** product to the extension target (it is
+  Tauri-free; never link the main plugin product into an extension).
+- Link **`libapp.a`** into the extension and add these `OTHER_LDFLAGS`:
+  `-Wl,-u,_tauri_notifications_process_silent_push -Wl,-u,_tauri_notifications_silent_push_free`
+  — the archive's handler object file is dead-stripped without them (and a
+  forgotten `silent_push_handler!` invocation becomes a visible
+  "undefined symbol" link error instead of a silent fallback). Do **not** add
+  `-ObjC`.
+- Replace the template class with:
+
+```swift
+import TauriPluginNotificationsNSE
+
+final class NotificationService: TauriNotificationService {}
+```
+
+- Add an **App Group** to both the app and extension targets, put the group id
+  in the extension's Info.plist under **`TauriNotificationsAppGroup`**, and
+  keep the store your handler reads inside that group's container — the
+  extension passes the container path to Rust as `data_dir` (extension and app
+  sandboxes are otherwise disjoint).
+
+**Failure semantics** — the notification is never dropped; every failure shows
+the payload's fallback `alert` instead:
+
+| Case | Result |
+| --- | --- |
+| `silent_push_handler!` not invoked / symbols not linked | fallback alert (or a link error with the `-Wl,-u` flags) |
+| Handler declines (or returns `ClearActive`) or panics | fallback alert |
+| Handler's JSON fails to decode | fallback alert |
+| Handler exceeds the ~30 s budget | `serviceExtensionTimeWillExpire` delivers the fallback |
+
+**Testing:** locally injected payloads (`xcrun simctl push`) are **not** run
+through service extensions — the Simulator shows the fallback alert directly,
+which only proves the fallback path. To see the NSE rewrite content you need a
+**real APNs push**: either a physical device, or an Apple-Silicon Mac
+Simulator, which supports real APNs-sandbox pushes since Xcode 14 (register
+for push in the app to get a token, then send to
+`api.sandbox.push.apple.com` with your `.p8` key). The Swift test suite
+(`ios/NSE/Tests`) covers the full extension flow — payload flattening, the
+`dlsym` handoff, JSON decode, and content rewrite — without APNs.
+[`examples/notifications-demo`](examples/notifications-demo) contains a
+complete working setup: the extension target in
+`src-tauri/gen/apple/project.yml`, the handler in `src-tauri/src/push_handler.rs`.
+
+**Consuming from crates.io:** the Swift package lives inside the Rust crate
+checkout. Reference it by path from a git checkout/vendored copy, or copy the
+two dependency-free source files under `ios/NSE/Sources/` straight into your
+extension target.
+
 ## API Reference
 
 ### `isPermissionGranted()`

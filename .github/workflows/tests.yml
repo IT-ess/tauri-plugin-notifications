@@ -203,11 +203,14 @@ jobs:
         run: cargo build --target aarch64-apple-ios
 
       - name: Run iOS unit tests
+        # The -Package scheme: since the package gained a second product
+        # (tauri-plugin-notifications-nse), the product-named scheme no longer
+        # carries the test action.
         run: |
           cd ios
           xcodebuild test \
-            -scheme tauri-plugin-notifications \
-            -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            -scheme tauri-plugin-notifications-Package \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
             -enableCodeCoverage YES \
             -resultBundlePath TestResults.xcresult
 

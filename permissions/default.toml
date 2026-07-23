@@ -24,6 +24,8 @@ permissions = [
   "allow-get-pending",
   "allow-remove-active",
   "allow-remove-all",
+  "allow-remove-active-by-group",
+  "allow-set-badge-count",
   "allow-get-active",
   "allow-check-permissions",
   "allow-show",

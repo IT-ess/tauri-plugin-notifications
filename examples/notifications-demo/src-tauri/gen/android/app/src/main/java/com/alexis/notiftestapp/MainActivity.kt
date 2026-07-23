@@ -1,4 +1,4 @@
-package com.test.app
+package com.alexis.notiftestapp
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

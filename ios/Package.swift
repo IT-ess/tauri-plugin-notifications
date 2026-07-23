@@ -25,7 +25,14 @@ let package = Package(
     .library(
       name: "tauri-plugin-notifications",
       type: .static,
-      targets: ["tauri-plugin-notifications"])
+      targets: ["tauri-plugin-notifications"]),
+    // Tauri-free support library for the host app's Notification Service
+    // Extension target. Only this product may be linked into an NSE — the main
+    // plugin product depends on Tauri, which must not run in an extension.
+    .library(
+      name: "tauri-plugin-notifications-nse",
+      type: .static,
+      targets: ["TauriPluginNotificationsNSE"]),
   ],
   dependencies: [
     .package(name: "Tauri", path: "../.tauri/tauri-api")
@@ -40,9 +47,19 @@ let package = Package(
       ],
       path: "Sources",
       swiftSettings: swiftSettings),
+    // No Tauri dependency: this module runs inside the NSE process. The target
+    // name (not the dashed product name) is the module hosts `import`.
+    .target(
+      name: "TauriPluginNotificationsNSE",
+      path: "NSE/Sources"),
     .testTarget(
         name: "PluginTests",
         dependencies: ["tauri-plugin-notifications", .byName(name: "Tauri")]
+    ),
+    .testTarget(
+        name: "NSETests",
+        dependencies: ["TauriPluginNotificationsNSE"],
+        path: "NSE/Tests"
     ),
   ]
 )

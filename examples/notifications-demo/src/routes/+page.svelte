@@ -32,6 +32,11 @@
   } from "@choochmeque/tauri-plugin-notifications-api";
   import { onMount } from "svelte";
   import { resolveResource } from "@tauri-apps/api/path";
+  import { invoke } from "@tauri-apps/api/core";
+  import {
+    onOpenUrl,
+    getCurrent as getCurrentDeepLink,
+  } from "@tauri-apps/plugin-deep-link";
 
   // ============================================================================
   // STATE MANAGEMENT
@@ -59,6 +64,12 @@
   // Push notifications
   let pushToken = $state<string | null>(null);
   let pushRegistered = $state(false);
+
+  // The Matrix room a notification tap "opened". In a real client this would be
+  // a route change to the room timeline scrolled to `eventId`; here we just
+  // surface it in a banner to prove the room_id/event_id round-tripped from the
+  // (possibly killed-state) silent push through the tap.
+  let openedRoom = $state<{ roomId: string; eventId: string } | null>(null);
 
   // UnifiedPush (Linux only)
   let distributors = $state<string[]>([]);
@@ -175,6 +186,61 @@
       addLog(`❌ Unregistered from push notifications`);
     } catch (error) {
       addLog(`Error unregistering from push: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+    }
+  }
+
+  /**
+   * Simulates a silent (data-only) push being delivered to the app, exercising
+   * the same Rust handler (`silent_push_handler!`) a real FCM data message
+   * reaches. The Rust side "fetches" the event and returns the notification —
+   * the Matrix client pattern. Android-only.
+   */
+  async function handleSimulateSilentPush() {
+    try {
+      await invoke("simulate_silent_push", {
+        roomId: "!demo:matrix.org",
+        eventId: `$${Date.now()}`,
+      });
+      addLog("📨 Simulated silent push → handled natively in Rust");
+    } catch (error) {
+      addLog(`❌ Error simulating silent push: ${error}`);
+    }
+  }
+
+  /**
+   * "Opens" the Matrix room a notification tap pointed at. A real client would
+   * navigate to the room timeline and scroll to `eventId`; the demo just shows
+   * a banner. Driven by the `notificationClicked` listener below.
+   */
+  function openRoom(roomId: string, eventId: string) {
+    openedRoom = { roomId, eventId };
+    addLog(`🚪 Opening room ${roomId}${eventId ? ` at event ${eventId}` : ""}`);
+  }
+
+  /**
+   * Parses a Matrix URI (MSC2312), e.g. `matrix:roomid/abc:hs.org/e/xyz`, back
+   * into a sigil'd room/event id. Returns null for anything we don't recognize.
+   */
+  function parseMatrixUri(
+    url: string,
+  ): { roomId: string; eventId: string } | null {
+    const m = url.match(/^matrix:roomid\/([^/]+)(?:\/e\/(.+))?$/);
+    if (!m) return null;
+    return { roomId: `!${m[1]}`, eventId: m[2] ? `$${m[2]}` : "" };
+  }
+
+  /**
+   * Handles a `matrix:` deep link delivered by tauri-plugin-deep-link — fired
+   * when the user taps a silent-push notification (Option B). This is the same
+   * entry point a real `matrix:` link from anywhere else would hit.
+   */
+  function handleDeepLink(url: string) {
+    addLog(`🔗 Deep link opened: ${url}`);
+    const parsed = parseMatrixUri(url);
+    if (parsed) {
+      openRoom(parsed.roomId, parsed.eventId);
+    } else {
+      addLog(`⚠️ Unrecognized deep link: ${url}`);
     }
   }
 
@@ -655,13 +721,32 @@
         addLog(`🔘 Action performed - actionId: ${data.actionId}, title: ${data.notification?.title || "No title"}, input: ${data.inputValue || "none"}`);
       });
 
-      // Listen for notification clicks/taps
+      // Listen for notification clicks/taps. Note: the Matrix silent-push
+      // notifications open via a `matrix:` deep link instead (see the deep-link
+      // listener below), so this fires only for *other* notifications that use
+      // the default launcher tap.
       const unlistenClicked = await onNotificationClicked(
         (data: NotificationClickedData) => {
           addLog(
             `👆 Notification clicked - ID: ${data.id}, Data: ${JSON.stringify(data.data)}`,
           );
         },
+      );
+
+      // Matrix deep links (Option B). A silent-push notification's tap fires an
+      // ACTION_VIEW `matrix:` intent that tauri-plugin-deep-link delivers here.
+      // `getCurrent()` covers the cold-start case (the deep link *launched* the
+      // app); `onOpenUrl` covers taps while it's already running.
+      try {
+        const launchUrls = await getCurrentDeepLink();
+        launchUrls?.forEach(handleDeepLink);
+      } catch (error) {
+        addLog(
+          `Deep link getCurrent unavailable: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+        );
+      }
+      const unlistenDeepLink = await onOpenUrl((urls) =>
+        urls.forEach(handleDeepLink),
       );
 
       addLog("Event listeners registered");
@@ -671,6 +756,7 @@
         unlistenReceived.unregister();
         unlistenAction.unregister();
         unlistenClicked.unregister();
+        unlistenDeepLink();
       };
     } catch (error) {
       addLog(`Error setting up event listeners: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
@@ -691,6 +777,27 @@
   </header>
 
   <div class="content">
+    <!-- ====================================================================== -->
+    <!-- OPENED ROOM (notification tap → room_id / event_id) -->
+    <!-- ====================================================================== -->
+    {#if openedRoom}
+      <section class="card opened-room">
+        <h2>🚪 Opened from a notification tap</h2>
+        <p class="description">
+          A notification tap fired a <code>matrix:</code> deep link, delivered
+          here by tauri-plugin-deep-link. A real client would navigate to this
+          room's timeline and scroll to the event.
+        </p>
+        <div class="room-detail"><strong>room_id:</strong> <code>{openedRoom.roomId}</code></div>
+        {#if openedRoom.eventId}
+          <div class="room-detail"><strong>event_id:</strong> <code>{openedRoom.eventId}</code></div>
+        {/if}
+        <div class="button-group" style="margin-top: 1rem;">
+          <button onclick={() => (openedRoom = null)}>Close room</button>
+        </div>
+      </section>
+    {/if}
+
     <!-- ====================================================================== -->
     <!-- PERMISSION SECTION -->
     <!-- ====================================================================== -->
@@ -733,6 +840,21 @@
         </button>
         <button onclick={handleUnregisterPush} class:danger={pushRegistered}>
           Unregister
+        </button>
+      </div>
+
+      <div class="info-box" style="margin-top: 1rem;">
+        <strong>Silent push (Android, Rust-only):</strong>
+        <p style="margin: 0.5rem 0;">
+          A data-only push carries just an id (e.g. a Matrix
+          <code>event_id</code>). The Rust handler registered via
+          <code>silent_push_handler!</code> fetches the content and returns the
+          notification — in every app state, including after the app was killed.
+          There is no JavaScript API for this. The button below feeds a fake
+          silent push through that exact handler.
+        </p>
+        <button onclick={handleSimulateSilentPush}>
+          Simulate Silent Push (Matrix)
         </button>
       </div>
 
@@ -1322,6 +1444,24 @@
     border-radius: 4px;
     margin-top: 1rem;
     color: #0c4a6e;
+  }
+
+  .opened-room {
+    border: 2px solid #667eea;
+  }
+
+  .room-detail {
+    margin: 0.25rem 0;
+    color: #333;
+  }
+
+  .room-detail code {
+    font-family: "Monaco", "Courier New", monospace;
+    font-size: 0.875rem;
+    background: #f0f0f0;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    word-break: break-all;
   }
 
   .push-token-container {
