@@ -20,3 +20,5 @@ coverage
 # Firebase config (users should add their own)
 google-services.json
 examples/notifications-demo/scripts/service-account.json
+
+examples/notifications-demo/src-tauri/gen/android/gradle/gradle-daemon-jvm.properties
