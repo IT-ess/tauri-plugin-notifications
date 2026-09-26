@@ -15,15 +15,15 @@
   "license": "MIT",
   "dependencies": {
     "@choochmeque/tauri-plugin-notifications-api": "file:../..",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-deep-link": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/api": "^3.0.0-alpha.1",
+    "@tauri-apps/plugin-deep-link": "^3.0.0-alpha.1",
+    "@tauri-apps/plugin-opener": "^3.0.0-alpha.1"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",
     "@sveltejs/kit": "^2.70.2",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^3.0.0-alpha.2",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.3",
     "typescript": "~6.0.3",

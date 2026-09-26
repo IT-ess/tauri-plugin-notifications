@@ -4,7 +4,7 @@ version = "0.5.0-rc.14"
 authors = ["You"]
 description = "A Tauri v2 plugin for sending notifications on desktop and mobile platforms with support for system notifications and push delivery via FCM and APNs."
 edition = "2024"
-rust-version = "1.93"
+rust-version = "1.95"
 exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
 links = "tauri-plugin-notifications"
 license = "MIT"
@@ -18,7 +18,7 @@ push-notifications = ["dep:zbus", "dep:tokio", "dep:uuid"]
 notify-rust = ["dep:notify-rust"]
 
 [dependencies]
-tauri = { version = "2", default-features = false }
+tauri = { version = "3.0.0-alpha.2", default-features = false }
 serde = "1.0"
 serde_json = "1.0"
 serde_repr = "0.1"
@@ -27,9 +27,6 @@ log = "0.4"
 rand = "0.10"
 time = { version = "0.3", features = ["serde", "parsing", "formatting"] }
 url = { version = "2", features = ["serde"] }
-
-[target.'cfg(target_os = "ios")'.dependencies]
-tauri = { version = "2", features = ["wry"] }
 
 # Backs the JNI export `silent_push_handler!` generates, which the plugin's
 # messaging service calls for killed-state silent pushes.
@@ -76,7 +73,7 @@ uuid = { version = "1", default-features = false }
 nt-time = "0.15"
 
 [build-dependencies]
-tauri-plugin = { version = "2", features = ["build"] }
+tauri-plugin = { version = "3.0.0-alpha.1", features = ["build"] }
 
 [target.'cfg(target_os = "macos")'.build-dependencies]
 swift-bridge-build = "0.1"
@@ -87,6 +84,6 @@ ctor = "1.0"
 maplit = "1"
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dev-dependencies]
-tauri = { version = "2", default-features = false, features = ["test"] }
+tauri = { version = "3.0.0-alpha.2", default-features = false, features = ["test"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 zbus = { version = "5", default-features = false, features = ["async-io"] }

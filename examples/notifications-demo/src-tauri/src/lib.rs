@@ -69,6 +69,7 @@ pub fn run() {
     log::info!("notifications-demo starting");
 
     tauri::Builder::default()
+        .runtime(tauri_runtime_wry::Wry::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notifications::init())
         // Handles the `matrix:` deep link a notification tap fires (Option B):
