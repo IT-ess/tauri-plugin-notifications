@@ -41,7 +41,7 @@ fn main() {
         .contains("android")
     {
         let properties_content = format!("enablePushNotifications={enable_push}");
-        std::fs::write("android/build.properties", properties_content)
+        write_if_changed("android/build.properties", &properties_content)
             .expect("Failed to write build.properties");
     }
 
@@ -50,8 +50,8 @@ fn main() {
     let ios_marker_path = std::path::Path::new("ios/.push-notifications-enabled");
     let macos_marker_path = std::path::Path::new("macos/.push-notifications-enabled");
     if enable_push {
-        std::fs::write(ios_marker_path, "").expect("Failed to write iOS push marker file");
-        std::fs::write(macos_marker_path, "").expect("Failed to write macOS push marker file");
+        write_if_changed(ios_marker_path, "").expect("Failed to write iOS push marker file");
+        write_if_changed(macos_marker_path, "").expect("Failed to write macOS push marker file");
     } else {
         if ios_marker_path.exists() {
             std::fs::remove_file(ios_marker_path).ok();
@@ -104,6 +104,19 @@ fn main() {
             );
         }
     }
+}
+
+/// Writes `contents` to `path` unless it already holds exactly that.
+///
+/// These files live in the crate's source tree, so rewriting them on every
+/// build bumps their mtime and makes file watchers of path dependents (e.g.
+/// `tauri dev`) see a source change and rebuild in a loop.
+fn write_if_changed(path: impl AsRef<std::path::Path>, contents: &str) -> std::io::Result<()> {
+    let path = path.as_ref();
+    if std::fs::read(path).is_ok_and(|current| current == contents.as_bytes()) {
+        return Ok(());
+    }
+    std::fs::write(path, contents)
 }
 
 #[cfg(target_os = "macos")]
@@ -230,6 +243,9 @@ fn swift_library_static_lib_dir() -> PathBuf {
         "debug"
     };
 
-    let arch_dir = format!("{}-apple-macosx", swift_arch());
-    swift_build_dir().join(format!("{arch_dir}/{debug_or_release}"))
+    // SwiftPM creates a `<scratch>/<config>` symlink to the products dir with
+    // both build systems: `<triple>/<config>` for the legacy native one, and
+    // `out/Products/<Config>` for swiftbuild (the default since Swift 6.4),
+    // so don't hardcode either layout.
+    swift_build_dir().join(debug_or_release)
 }
