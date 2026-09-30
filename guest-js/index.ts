@@ -130,6 +130,69 @@ interface Options {
    * Sets the number of items this notification represents on Android.
    */
   number?: number;
+  /**
+   * Chat messages, rendered as an Android `MessagingStyle` conversation with
+   * per-sender (circular) avatars. When set, this takes precedence over
+   * `largeBody` and `inboxLines`. Android only.
+   */
+  messages?: Message[];
+  /**
+   * Conversation title shown above the messages (typically the room name for a
+   * group conversation). Used with `messages`. Android only.
+   */
+  conversationTitle?: string;
+  /**
+   * Marks the conversation as a group (multiple participants), letting the system
+   * display `conversationTitle`. Android only.
+   */
+  groupConversation?: boolean;
+  /**
+   * Avatar of the group conversation (room) as base64-encoded image bytes
+   * (PNG/JPEG). With `groupConversation`, drawn as the notification icon
+   * instead of the sender's avatar. Android only.
+   */
+  conversationAvatarBytes?: string;
+  /**
+   * Display name of the local user in a `messages` conversation (defaults to
+   * "Me"). Android only.
+   */
+  selfName?: string;
+  /**
+   * When `true` (default), posting a `messages` notification whose `id` is already
+   * showing appends the new messages to that conversation instead of replacing it,
+   * accumulating a chat thread. Set `false` to replace. Android only.
+   */
+  appendMessages?: boolean;
+  /**
+   * Android only. When set, tapping the notification opens this deep-link URI
+   * (an `ACTION_VIEW` intent, e.g. `matrix:roomid/…`) pinned to the app's own
+   * package, instead of launching the default activity. The app's matching
+   * `<intent-filter>` receives it (e.g. via `tauri-plugin-deep-link`). Replaces
+   * the `notificationClicked` event for that tap.
+   */
+  deepLink?: string;
+}
+
+/**
+ * A single chat message inside a `MessagingStyle` notification (Android).
+ */
+interface Message {
+  /** Display name of the sender. Omit to render as the local user. */
+  sender?: string;
+  /**
+   * Stable key identifying the sender (e.g. a Matrix user id), used by the system
+   * to merge messages from the same sender.
+   */
+  personKey?: string;
+  /**
+   * Sender avatar as base64-encoded image bytes (PNG/JPEG), shown as a circular
+   * icon. Useful for dynamic avatars that aren't bundled drawables.
+   */
+  avatarBytes?: string;
+  /** Message text. */
+  text?: string;
+  /** Message time in epoch milliseconds. Omit or use `0` for "now". */
+  timestamp?: number;
 }
 
 /**
@@ -885,6 +948,7 @@ async function onNotificationClicked(
 export type {
   Attachment,
   Options,
+  Message,
   Action,
   ActionType,
   PendingNotification,

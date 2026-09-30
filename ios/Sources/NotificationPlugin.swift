@@ -80,6 +80,14 @@ struct RemoveActiveArgs: Decodable {
   let notifications: [RemoveActiveNotification]
 }
 
+struct RemoveActiveByGroupArgs: Decodable {
+  let group: String
+}
+
+struct SetBadgeCountArgs: Decodable {
+  let count: Int
+}
+
 func showNotification(invoke: Invoke, notification: Notification)
   throws -> UNNotificationRequest
 {
@@ -368,6 +376,49 @@ class NotificationPlugin: Plugin {
       })
     }
     invoke.resolve()
+  }
+
+  /// Removes every delivered notification whose `threadIdentifier` matches the
+  /// given group. This is the only way to dismiss remote (NSE-delivered)
+  /// notifications: their request identifiers are APNs-assigned (an NSE cannot
+  /// change them), so `removeActive`'s numeric-id matching never reaches them —
+  /// but the NSE does preserve the handler's `group` as `threadIdentifier`.
+  /// Idempotent: matching nothing resolves without error.
+  @objc func removeActiveByGroup(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(RemoveActiveByGroupArgs.self)
+    let center = UNUserNotificationCenter.current()
+    center.getDeliveredNotifications { notifications in
+      let ids = notifications
+        .filter { $0.request.content.threadIdentifier == args.group }
+        .map { $0.request.identifier }
+      if !ids.isEmpty {
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+      }
+      invoke.resolve()
+    }
+  }
+
+  /// Sets the app icon badge count (`0` clears it).
+  @objc func setBadgeCount(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(SetBadgeCountArgs.self)
+    if #available(iOS 16.0, *) {
+      // Thread-safe UserNotifications API; errors if `.badge` authorization
+      // was denied (requestAuthorization asks for it).
+      UNUserNotificationCenter.current().setBadgeCount(args.count) { error in
+        if let error = error {
+          invoke.reject(error.localizedDescription)
+        } else {
+          invoke.resolve()
+        }
+      }
+    } else {
+      // iOS 15 fallback; main-thread only. Legacy caveat: setting 0 here also
+      // clears delivered notifications — acceptable, 0 means everything read.
+      DispatchQueue.main.async {
+        UIApplication.shared.applicationIconBadgeNumber = args.count
+        invoke.resolve()
+      }
+    }
   }
 
   @objc func getActive(_ invoke: Invoke) {
