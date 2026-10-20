@@ -107,8 +107,12 @@ fn main() {
 
             watch_swift_inputs();
 
+            // swift-bridge rewrites its output unconditionally, so generate into
+            // OUT_DIR and only copy changed files into the source tree.
+            let staging_dir = out_dir().join("swift-bridge");
             swift_bridge_build::parse_bridges(bridges)
-                .write_all_concatenated(swift_bridge_out_dir(), env!("CARGO_PKG_NAME"));
+                .write_all_concatenated(&staging_dir, env!("CARGO_PKG_NAME"));
+            sync_dir(&staging_dir, &swift_bridge_out_dir());
 
             let lib_dir = compile_swift();
 
@@ -132,6 +136,24 @@ fn write_if_changed(path: impl AsRef<std::path::Path>, contents: &str) -> std::i
         return Ok(());
     }
     std::fs::write(path, contents)
+}
+
+/// Mirrors every file under `from` into `to` via [`write_if_changed`].
+#[cfg(target_os = "macos")]
+fn sync_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).expect("Failed to create swift-bridge output dir");
+    for entry in std::fs::read_dir(from).expect("Failed to read swift-bridge staging dir") {
+        let path = entry
+            .expect("Failed to read swift-bridge staging entry")
+            .path();
+        let dest = to.join(path.file_name().expect("staging entry has a file name"));
+        if path.is_dir() {
+            sync_dir(&path, &dest);
+        } else {
+            let contents = std::fs::read_to_string(&path).expect("Failed to read generated file");
+            write_if_changed(&dest, &contents).expect("Failed to write generated file");
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -429,19 +451,4 @@ fn macos_deployment_target() -> String {
 #[cfg(target_os = "macos")]
 fn swift_target_triple() -> String {
     format!("{}-apple-macosx{}", swift_arch(), macos_deployment_target())
-}
-
-#[cfg(target_os = "macos")]
-fn swift_library_static_lib_dir() -> PathBuf {
-    let debug_or_release = if is_release_build() {
-        "release"
-    } else {
-        "debug"
-    };
-
-    // SwiftPM creates a `<scratch>/<config>` symlink to the products dir with
-    // both build systems: `<triple>/<config>` for the legacy native one, and
-    // `out/Products/<Config>` for swiftbuild (the default since Swift 6.4),
-    // so don't hardcode either layout.
-    swift_build_dir().join(debug_or_release)
 }
