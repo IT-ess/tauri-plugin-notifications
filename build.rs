@@ -31,6 +31,8 @@ const COMMANDS: &[&str] = &[
     "get_pending",
     "remove_active",
     "remove_all",
+    "remove_active_by_group",
+    "set_badge_count",
     "get_active",
     "check_permissions",
     "show",
@@ -55,7 +57,7 @@ fn main() {
         .contains("android")
     {
         let properties_content = format!("enablePushNotifications={enable_push}");
-        std::fs::write("android/build.properties", properties_content)
+        write_if_changed("android/build.properties", &properties_content)
             .expect("Failed to write build.properties");
     }
 
@@ -64,8 +66,8 @@ fn main() {
     let ios_marker_path = std::path::Path::new("ios/.push-notifications-enabled");
     let macos_marker_path = std::path::Path::new("macos/.push-notifications-enabled");
     if enable_push {
-        std::fs::write(ios_marker_path, "").expect("Failed to write iOS push marker file");
-        std::fs::write(macos_marker_path, "").expect("Failed to write macOS push marker file");
+        write_if_changed(ios_marker_path, "").expect("Failed to write iOS push marker file");
+        write_if_changed(macos_marker_path, "").expect("Failed to write macOS push marker file");
     } else {
         if ios_marker_path.exists() {
             std::fs::remove_file(ios_marker_path).ok();
@@ -105,8 +107,12 @@ fn main() {
 
             watch_swift_inputs();
 
+            // swift-bridge rewrites its output unconditionally, so generate into
+            // OUT_DIR and only copy changed files into the source tree.
+            let staging_dir = out_dir().join("swift-bridge");
             swift_bridge_build::parse_bridges(bridges)
-                .write_all_concatenated(swift_bridge_out_dir(), env!("CARGO_PKG_NAME"));
+                .write_all_concatenated(&staging_dir, env!("CARGO_PKG_NAME"));
+            sync_dir(&staging_dir, &swift_bridge_out_dir());
 
             let lib_dir = compile_swift();
 
@@ -119,9 +125,37 @@ fn main() {
     }
 }
 
-/// Declares every hand-written Swift input as a rebuild trigger.
-/// `Sources/generated` is deliberately skipped: this build script writes it, so
-/// watching it would make cargo rebuild on every invocation.
+/// Writes `contents` to `path` unless it already holds exactly that.
+///
+/// These files live in the crate's source tree, so rewriting them on every
+/// build bumps their mtime and makes file watchers of path dependents (e.g.
+/// `tauri dev`) see a source change and rebuild in a loop.
+fn write_if_changed(path: impl AsRef<std::path::Path>, contents: &str) -> std::io::Result<()> {
+    let path = path.as_ref();
+    if std::fs::read(path).is_ok_and(|current| current == contents.as_bytes()) {
+        return Ok(());
+    }
+    std::fs::write(path, contents)
+}
+
+/// Mirrors every file under `from` into `to` via [`write_if_changed`].
+#[cfg(target_os = "macos")]
+fn sync_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).expect("Failed to create swift-bridge output dir");
+    for entry in std::fs::read_dir(from).expect("Failed to read swift-bridge staging dir") {
+        let path = entry
+            .expect("Failed to read swift-bridge staging entry")
+            .path();
+        let dest = to.join(path.file_name().expect("staging entry has a file name"));
+        if path.is_dir() {
+            sync_dir(&path, &dest);
+        } else {
+            let contents = std::fs::read_to_string(&path).expect("Failed to read generated file");
+            write_if_changed(&dest, &contents).expect("Failed to write generated file");
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn watch_swift_inputs() {
     let package_manifest = manifest_dir().join("macos/Package.swift");

@@ -19,6 +19,8 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.google.firebase.messaging.FirebaseMessaging
 
 const val LOCAL_NOTIFICATIONS = "permissionState"
@@ -105,6 +107,13 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   companion object {
     var instance: NotificationPlugin? = null
 
+    // Shared mapper for background entry points (no plugin instance). Jackson
+    // mappers are heavyweight to build and thread-safe after configuration.
+    // Unknown properties are tolerated so a NotificationData field added on the
+    // Rust side never turns into a runtime parse failure on the silent-push path.
+    internal val mapper: ObjectMapper = ObjectMapper()
+      .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+
     fun triggerNotification(notification: Notification, source: String = "local") {
       val data = JSObject()
       data.put("source", source)
@@ -134,6 +143,44 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
         data.put("attachments", arr)
       }
       instance?.trigger("notification", data)
+    }
+
+    /**
+     * Post a notification from a background context (e.g. the silent-push path
+     * in [TauriFirebaseMessagingService] after a cold start), without a live
+     * plugin instance or Activity.
+     *
+     * Builds a standalone [TauriNotificationManager] bound to `context`, ensures
+     * the default channel exists, and shows the notification immediately using
+     * the same builder/styling as foreground notifications. Safe to call when
+     * the app is killed — clicks open the app via its launcher intent.
+     */
+    fun postBackgroundNotification(context: Context, notification: Notification): Int {
+      val storage = NotificationStorage(context, mapper)
+      val manager = TauriNotificationManager(storage, null, context, null)
+      manager.createNotificationChannel()
+      // The warm path sets `sourceJson` from the raw invoke args so a tap can
+      // surface the notification's `extra` payload (see `onIntent` →
+      // `extractLocalNotificationData`). Background callers have no invoke, so
+      // synthesize a minimal `sourceJson` carrying just `extra` — enough to
+      // round-trip the payload (e.g. a Matrix room_id/event_id) to JS on click.
+      // (Intent size is bounded either way: `buildIntent` strips the heavy
+      // conversation fields via `slimSourceJson` before any PendingIntent.)
+      if (notification.sourceJson == null) {
+        notification.extra?.let { extra ->
+          notification.sourceJson = JSObject().apply { put("extra", extra) }.toString()
+        }
+      }
+      return manager.schedule(notification)
+    }
+
+    /**
+     * Drop every stored MessagingStyle conversation history. For background
+     * callers that clear the notification shade: without this, the next
+     * message would resurrect the cleared thread.
+     */
+    fun clearAllConversations(context: Context) {
+      NotificationStorage(context, mapper).clearAllConversations()
     }
   }
 
@@ -301,8 +348,11 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   fun removeActive(invoke: Invoke) {
     val args = invoke.parseArgs(RemoveActiveArgs::class.java)
 
+    // Removing a notification from the shade also ends its accumulated chat
+    // thread; otherwise the next message would resurrect the old history.
     if (args.notifications.isEmpty()) {
       notificationManager.cancelAll()
+      notificationStorage.clearAllConversations()
       invoke.resolve()
     } else {
       for (notification in args.notifications) {
@@ -311,6 +361,7 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
         } else {
           notificationManager.cancel(notification.tag, notification.id)
         }
+        notificationStorage.clearConversation(notification.id)
       }
       invoke.resolve()
     }
@@ -545,4 +596,5 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
 
     invoke.resolve()
   }
+
 }

@@ -7,9 +7,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.media.AudioAttributes
 import android.net.Uri
@@ -18,7 +20,11 @@ import android.os.Build.VERSION.SDK_INT
 import android.os.UserManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import app.tauri.Logger
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.PluginManager
@@ -37,6 +43,30 @@ const val REMOTE_INPUT_KEY = "NotificationRemoteInput"
 const val DEFAULT_NOTIFICATION_CHANNEL_ID = "default"
 const val DEFAULT_PRESS_ACTION = "tap"
 const val TAG = "NotificationsPlugin"
+
+// MIME type set on a deep-link tap intent purely so `getType()` is non-null (see
+// `buildIntent`). Any non-null, non-"text/plain" type works; the value is unused.
+private const val DEEP_LINK_INTENT_TYPE = "application/octet-stream"
+
+// Upper bound on messages retained in an accumulating MessagingStyle notification.
+private const val MAX_MESSAGES = 25
+
+// Strips the base64-heavy conversation fields from the notification JSON that
+// rides along in PendingIntent extras, keeping every Binder transaction that
+// marshals the intent (content/action PendingIntents, conversation shortcut)
+// far under the ~1MB limit. Everything else (id/title/body/extra/deepLink/…)
+// still round-trips to the notificationClicked event.
+internal fun slimSourceJson(json: String?): String? {
+  if (json == null) return null
+  return try {
+    val obj = JSONObject(json)
+    obj.remove("messages")
+    obj.remove("conversationAvatarBytes")
+    obj.toString()
+  } catch (e: JSONException) {
+    json
+  }
+}
 
 class TauriNotificationManager(
   private val storage: NotificationStorage,
@@ -158,7 +188,11 @@ class TauriNotificationManager(
       .setOngoing(notification.isOngoing)
       .setPriority(NotificationCompat.PRIORITY_DEFAULT)
       .setGroupSummary(notification.isGroupSummary)
-    if (notification.largeBody != null) {
+    val messages = notification.messages
+    if (!messages.isNullOrEmpty()) {
+      // Chat-style conversation with per-sender circular avatars.
+      applyMessagingStyle(mBuilder, notification, messages)
+    } else if (notification.largeBody != null) {
       // support multiline text
       mBuilder.setStyle(
         NotificationCompat.BigTextStyle()
@@ -198,7 +232,9 @@ class TauriNotificationManager(
     mBuilder.setVisibility(notification.visibility ?: NotificationCompat.VISIBILITY_PRIVATE)
     mBuilder.setOnlyAlertOnce(true)
     mBuilder.setSmallIcon(notification.getSmallIcon(context, getDefaultSmallIcon(context)))
-    mBuilder.setLargeIcon(notification.getLargeIcon(context))
+    // A drawable largeIcon takes precedence; otherwise keep any avatar already set
+    // by the MessagingStyle branch (don't clobber it with a null large icon).
+    notification.getLargeIcon(context)?.let { mBuilder.setLargeIcon(it) }
     val iconColor = notification.getIconColor(config?.iconColor ?: "")
     if (iconColor.isNotEmpty()) {
       try {
@@ -220,6 +256,124 @@ class TauriNotificationManager(
         Logger.error(Logger.tags(TAG), "Failed to trigger notification event: ${e.message}", e)
       }
     }
+  }
+
+  // Build a chat-style notification: each message shows its sender and (circular)
+  // avatar, with an optional conversation title for group rooms. A long-lived
+  // conversation shortcut is published so Android 11+ shows the conversation's
+  // avatar — the room's for group conversations, else the latest sender's — as
+  // the main icon, badged with the app's small icon. The same avatar is also
+  // set as largeIcon for pre-11 devices (and rate-limited shortcut pushes).
+  //
+  // When `appendMessages` is set, the new messages are appended to the
+  // conversation persisted for this notification id (capped at MAX_MESSAGES), so
+  // a room's messages accumulate into one notification across cold starts. We
+  // persist rather than read back the shown notification because the platform's
+  // active-notification query is unreliable for this on some OS versions.
+  private fun applyMessagingStyle(
+    mBuilder: NotificationCompat.Builder,
+    notification: Notification,
+    messages: List<NotificationMessage>
+  ) {
+    val history = if (notification.appendMessages) {
+      storage.loadConversation(notification.id)
+    } else {
+      mutableListOf()
+    }
+    for (message in messages) {
+      // Persist a sender's avatar once (by key); messages reference it, keeping
+      // the stored conversation small even when avatars are large.
+      val key = message.personKey
+      val bytes = message.avatarBytes
+      if (key != null && !bytes.isNullOrEmpty()) {
+        storage.saveAvatar(key, bytes)
+      }
+      history.add(NotificationMessage().apply {
+        sender = message.sender
+        personKey = message.personKey
+        text = message.text
+        timestamp = if (message.timestamp != 0L) message.timestamp else System.currentTimeMillis()
+        // Keep avatar inline only when there's no key to dedupe on.
+        avatarBytes = if (key == null) bytes else null
+      })
+    }
+    val capped = if (history.size > MAX_MESSAGES) {
+      history.takeLast(MAX_MESSAGES).toMutableList()
+    } else {
+      history
+    }
+    storage.saveConversation(notification.id, capped)
+
+    val self = Person.Builder().setName(notification.selfName ?: "Me").build()
+    val style = NotificationCompat.MessagingStyle(self)
+      .setConversationTitle(notification.conversationTitle)
+      .setGroupConversation(notification.groupConversation)
+
+    var lastAvatar: Bitmap? = null
+    var lastPerson: Person? = null
+    // Decode each sender's avatar once, not once per message in the thread.
+    val avatarCache = HashMap<String, Bitmap?>()
+    for (message in capped) {
+      val avatar = message.personKey?.let { key ->
+        avatarCache.getOrPut(key) { Notification.decodeBase64Bitmap(storage.loadAvatar(key)) }
+      } ?: Notification.decodeBase64Bitmap(message.avatarBytes)
+      // A message without a sender is from the local user: pass a null Person so
+      // MessagingStyle renders it as the style's self user.
+      val person = message.sender?.let { sender ->
+        Person.Builder()
+          .setName(sender)
+          .apply {
+            message.personKey?.let { setKey(it) }
+            avatar?.let { setIcon(IconCompat.createWithBitmap(it)) }
+          }
+          .build()
+      }
+      if (person != null) {
+        lastPerson = person
+        if (avatar != null) lastAvatar = avatar
+      }
+      val timestamp = if (message.timestamp != 0L) message.timestamp else System.currentTimeMillis()
+      style.addMessage(message.text, timestamp, person)
+    }
+
+    // Group conversations brand as the room: the room avatar becomes the
+    // conversation icon (largeIcon), while per-message sender avatars remain
+    // in the expanded rows. Persisted per notification id so a stacked re-post
+    // whose payload lacks the avatar doesn't flip the icon back to a sender.
+    val conversationAvatar = if (notification.groupConversation) {
+      val bytes = notification.conversationAvatarBytes?.takeIf { it.isNotEmpty() }
+      if (bytes != null) storage.saveConversationAvatar(notification.id, bytes)
+      Notification.decodeBase64Bitmap(bytes ?: storage.loadConversationAvatar(notification.id))
+    } else null
+
+    // Android 11+ only renders the "conversation" layout — avatar as the main
+    // icon with the app's small icon badged on it — when the notification is
+    // tied to a published long-lived dynamic shortcut. Without it the system
+    // falls back to the standard template (app icon). The id is stable per
+    // notification id (= per room), so each conversation reuses one shortcut
+    // and its icon refreshes on every post.
+    val shortcutId = "tauri_conv_${notification.id}"
+    val shortcutIcon = (conversationAvatar ?: lastAvatar)?.let { IconCompat.createWithBitmap(it) }
+    val shortLabel = (notification.conversationTitle ?: notification.title)
+      ?.takeIf { it.isNotBlank() } ?: "Conversation"
+    val shortcut = ShortcutInfoCompat.Builder(context, shortcutId)
+      .setShortLabel(shortLabel)
+      .setLongLived(true)
+      .setIntent(buildIntent(notification, DEFAULT_PRESS_ACTION))
+      .apply {
+        shortcutIcon?.let { setIcon(it) }
+        lastPerson?.let { setPerson(it) }
+      }
+      .build()
+    // Handles rate limiting and per-activity count eviction itself. The
+    // shortcut id is referenced regardless: it is long-lived, so any earlier
+    // push keeps it valid, and a missing shortcut just means today's fallback
+    // rendering for that one post.
+    ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
+    mBuilder.setShortcutId(shortcutId)
+
+    mBuilder.setStyle(style)
+    (conversationAvatar ?: lastAvatar)?.let { mBuilder.setLargeIcon(it) }
   }
 
   // Create intents for open/dismiss actions
@@ -287,6 +441,32 @@ class TauriNotificationManager(
   }
 
   private fun buildIntent(notification: Notification, action: String?): Intent {
+    // A deep link only governs the main press action ("tap"), not action
+    // buttons. When set, the tap fires ACTION_VIEW for the URI, targeting this
+    // app's own launcher activity by explicit component so the OS routes it
+    // straight there — never a chooser or another app that registered the
+    // scheme. Tauri's deep-link plugin then reports the URL via `onOpenUrl`.
+    val deepLink = notification.deepLink
+    if (deepLink != null && action == DEFAULT_PRESS_ACTION) {
+      val component = if (activity != null) {
+        ComponentName(context, activity.javaClass)
+      } else {
+        context.packageManager.getLaunchIntentForPackage(context.packageName)?.component
+      }
+      return Intent(Intent.ACTION_VIEW).apply {
+        this.component = component
+        addCategory(Intent.CATEGORY_BROWSABLE)
+        // setDataAndType with a NON-NULL type: works around a crash in tao
+        // (Tauri's windowing layer, ndk_glue) where an ACTION_VIEW intent whose
+        // getType() is null panics — and the panic aborts the process because it
+        // unwinds across a JNI callback. The type is otherwise unused; tao reads
+        // the deep link from the data URI (getDataString). Because we target an
+        // explicit component, the typed intent doesn't need a matching
+        // intent-filter data type.
+        setDataAndType(Uri.parse(deepLink), DEEP_LINK_INTENT_TYPE)
+        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+      }
+    }
     val intent = if (activity != null) {
       Intent(context, activity.javaClass)
     } else {
@@ -298,7 +478,7 @@ class TauriNotificationManager(
     intent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
     intent.putExtra(NOTIFICATION_INTENT_KEY, notification.id)
     intent.putExtra(ACTION_INTENT_KEY, action)
-    intent.putExtra(NOTIFICATION_OBJ_INTENT_KEY, notification.sourceJson)
+    intent.putExtra(NOTIFICATION_OBJ_INTENT_KEY, slimSourceJson(notification.sourceJson))
     val schedule = notification.schedule
     intent.putExtra(NOTIFICATION_IS_REMOVABLE_KEY, schedule == null || schedule.isRemovable())
     return intent
@@ -391,6 +571,8 @@ class TauriNotificationManager(
       dismissVisibleNotification(id)
       cancelTimerForNotification(id)
       storage.deleteNotification(id.toString())
+      // Reset accumulated chat history so a later message starts a fresh thread.
+      storage.clearConversation(id)
     }
   }
 
@@ -460,10 +642,14 @@ class NotificationDismissReceiver : BroadcastReceiver() {
       Logger.error(Logger.tags(TAG), "Invalid notification dismiss operation", null)
       return
     }
+    // The notification left the shade (user swipe, clear-all, or auto-cancel
+    // tap), so its accumulated chat history must not resurface on the next
+    // message: the conversation restarts from the new message.
+    val notificationStorage = NotificationStorage(context, ObjectMapper())
+    notificationStorage.clearConversation(intExtra)
     val isRemovable =
       intent.getBooleanExtra(NOTIFICATION_IS_REMOVABLE_KEY, true)
     if (isRemovable) {
-      val notificationStorage = NotificationStorage(context, ObjectMapper())
       notificationStorage.deleteNotification(intExtra.toString())
     }
   }

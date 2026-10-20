@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
+import android.util.Base64
 import android.service.notification.StatusBarNotification
 import androidx.annotation.RequiresApi
 import app.tauri.annotation.InvokeArg
@@ -56,6 +57,27 @@ class Notification {
   var number: Int? = null
   var silent: Boolean? = null
 
+  // Chat-style (Android MessagingStyle). When `messages` is non-empty the
+  // notification is rendered as a conversation with per-sender (circular)
+  // avatars instead of the BigText/Inbox styles. See [NotificationMessage].
+  var messages: List<NotificationMessage>? = null
+  var conversationTitle: String? = null
+  var groupConversation: Boolean = false
+  // Group conversation (room) avatar as base64 image bytes. With
+  // `groupConversation`, it becomes the conversation icon (largeIcon) of the
+  // MessagingStyle notification; sender avatars stay on the expanded rows.
+  var conversationAvatarBytes: String? = null
+  var selfName: String? = null
+  // When true (default), posting a MessagingStyle notification whose `id` is
+  // already showing appends the new messages to that conversation instead of
+  // replacing it. Set false to replace (e.g. once the room has been read).
+  var appendMessages: Boolean = true
+  // When set, tapping the notification fires an ACTION_VIEW intent for this URI
+  // (a deep link, e.g. "matrix:roomid/…") pinned to this app's package, instead
+  // of launching the default activity. The app's matching <intent-filter>
+  // receives it. See `buildIntent` in TauriNotificationManager.
+  var deepLink: String? = null
+
   fun getSound(context: Context, defaultSound: Int): String? {
     var soundPath: String? = null
     var resId: Int = AssetUtils.RESOURCE_ID_ZERO_VALUE
@@ -98,6 +120,22 @@ class Notification {
   }
 
   companion object {
+    /**
+     * Decode a base64-encoded image (PNG/JPEG bytes) into a [Bitmap], or `null`
+     * if the input is null or can't be decoded. Used for dynamic avatars that
+     * aren't bundled drawables (e.g. a Matrix sender/room avatar fetched in the
+     * background and passed through as base64).
+     */
+    fun decodeBase64Bitmap(base64: String?): Bitmap? {
+      if (base64.isNullOrEmpty()) return null
+      return try {
+        val bytes = Base64.decode(base64, Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+      } catch (e: IllegalArgumentException) {
+        null
+      }
+    }
+
     fun buildNotificationPendingList(notifications: List<Notification>): List<PendingNotification> {
       val pendingNotifications = mutableListOf<PendingNotification>()
       for (notification in notifications) {
@@ -141,6 +179,20 @@ class Notification {
       return activeNotifications
     }
   }
+}
+
+/**
+ * A single chat message rendered inside an Android `MessagingStyle` notification.
+ * The [avatarBytes] is the sender's avatar as base64 image bytes (decoded by the
+ * plugin), which `MessagingStyle` displays as a circular icon.
+ */
+@InvokeArg
+class NotificationMessage {
+  var sender: String? = null
+  var personKey: String? = null
+  var avatarBytes: String? = null
+  var text: String? = null
+  var timestamp: Long = 0
 }
 
 @InvokeArg

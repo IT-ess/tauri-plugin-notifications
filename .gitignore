@@ -19,3 +19,4 @@ coverage
 
 # Firebase config (users should add their own)
 google-services.json
+examples/notifications-demo/scripts/service-account.json

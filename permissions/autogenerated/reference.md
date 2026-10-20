@@ -22,6 +22,8 @@ It allows all notification related features.
 - `allow-get-pending`
 - `allow-remove-active`
 - `allow-remove-all`
+- `allow-remove-active-by-group`
+- `allow-set-badge-count`
 - `allow-get-active`
 - `allow-check-permissions`
 - `allow-show`
@@ -489,6 +491,32 @@ Denies the remove_active command without any pre-configured scope.
 <tr>
 <td>
 
+`notifications:allow-remove-active-by-group`
+
+</td>
+<td>
+
+Enables the remove_active_by_group command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifications:deny-remove-active-by-group`
+
+</td>
+<td>
+
+Denies the remove_active_by_group command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `notifications:allow-remove-all`
 
 </td>
@@ -560,6 +588,32 @@ Enables the request_permission command without any pre-configured scope.
 <td>
 
 Denies the request_permission command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifications:allow-set-badge-count`
+
+</td>
+<td>
+
+Enables the set_badge_count command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`notifications:deny-set-badge-count`
+
+</td>
+<td>
+
+Denies the set_badge_count command without any pre-configured scope.
 
 </td>
 </tr>
